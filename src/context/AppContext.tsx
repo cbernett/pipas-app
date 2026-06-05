@@ -25,6 +25,10 @@ interface AppContextType {
   armProgram: (blocks: WorkspaceBlock[]) => void;
   stopRun: () => void;
   simulateTouch: (pad: number) => void;
+  /** Tap a single block to preview its immediate effect (plays sound, etc.) */
+  tapBlock: (block: WorkspaceBlock) => void;
+  /** Run the script starting from a given block, arming if needed */
+  triggerScript: (blocksFromHere: WorkspaceBlock[]) => void;
   activeTab: 'codigo' | 'sons';
   setActiveTab: (t: 'codigo' | 'sons') => void;
   workspaceBlocks: WorkspaceBlock[];
@@ -111,7 +115,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Execute a flat list of blocks sequentially, with highlight
   const executeScript = useCallback(async (blocks: WorkspaceBlock[]) => {
-    if (!blocks.length || !isRunningRef.current) return;
+    if (!blocks.length) return;
     isExecutingRef.current = true;
     const flat = flattenBlocks(blocks);
 
@@ -165,11 +169,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const simulateTouch = useCallback((pad: number) => handleTouchPad(pad), [handleTouchPad]);
 
+  /** Preview a single block's effect immediately — no arm state required */
+  const tapBlock = useCallback((block: WorkspaceBlock) => {
+    executeBlock(block).catch(() => {});
+  }, []);
+
+  /** Run from this block downward, arming the program first if not already armed */
+  const triggerScript = useCallback((blocksFromHere: WorkspaceBlock[]) => {
+    if (!blocksFromHere.length) return;
+    if (isExecutingRef.current) return; // already mid-run
+    runAbortRef.current = false;
+    isRunningRef.current = true;
+    setIsRunning(true);
+    executeScriptRef.current(blocksFromHere);
+  }, []);
+
   return (
     <AppContext.Provider value={{
       boardStatus, setBoardStatus,
       isRunning, activeBlockIndex,
-      armProgram, stopRun, simulateTouch,
+      armProgram, stopRun, simulateTouch, tapBlock, triggerScript,
       activeTab, setActiveTab,
       workspaceBlocks, setWorkspaceBlocks: _setWorkspaceBlocks,
       libraryOpen, setLibraryOpen,

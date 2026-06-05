@@ -20,12 +20,14 @@ interface Props {
   preview?: boolean;
   isDragging?: boolean;
   isActive?: boolean;
-  /** called when an event-type block is tapped in the workspace */
+  /** called when an event-type block is tapped — runs from this block */
   onEventTap?: () => void;
+  /** called when any block is tapped — previews its immediate effect */
+  onBlockTap?: () => void;
 }
 
 export default function CodeBlock({
-  block, isFirst, isLast, preview, isDragging, isActive, onEventTap,
+  block, isFirst, isLast, preview, isDragging, isActive, onEventTap, onBlockTap,
 }: Props) {
   const isEvent   = block.category === 'Eventos';
   const isBracket = ['ctrl_2', 'ctrl_3', 'ctrl_4'].includes(block.defId) && !preview;
@@ -71,8 +73,11 @@ export default function CodeBlock({
         </View>
       )}
 
-      {isEvent && !preview ? (
-        <TouchableOpacity onPress={onEventTap} activeOpacity={0.85}>
+      {(onEventTap || onBlockTap) && !preview ? (
+        <TouchableOpacity
+          onPress={onEventTap ?? onBlockTap}
+          activeOpacity={0.82}
+        >
           {Body}
         </TouchableOpacity>
       ) : Body}

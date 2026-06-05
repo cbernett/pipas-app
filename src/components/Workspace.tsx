@@ -37,7 +37,7 @@ export default function Workspace() {
     workspaceBlocks, setWorkspaceBlocks,
     isRunning, activeBlockIndex,
     usbDisconnectedWhileRunning,
-    simulateTouch,
+    tapBlock, triggerScript,
   } = useApp();
 
   const displayBlocks = workspaceBlocks.length > 0 ? workspaceBlocks : EXAMPLE_PROGRAM;
@@ -123,12 +123,15 @@ export default function Workspace() {
     window.addEventListener('mouseup', onUp);
   }, [dragAnim, cancelDrag, getDropIndex]);
 
-  // Handle event block tap → simulate touch
-  const handleEventTap = useCallback((block: WorkspaceBlock) => {
-    const m = block.label.match(/toque\s+(\d)/i);
-    const pad = m ? parseInt(m[1]) : 1;
-    simulateTouch(pad);
-  }, [simulateTouch]);
+  // Event block tapped → run the script starting from this block
+  const handleEventTap = useCallback((block: WorkspaceBlock, index: number) => {
+    triggerScript(displayBlocks.slice(index));
+  }, [triggerScript, displayBlocks]);
+
+  // Any block tapped → preview its immediate effect (sound, etc.)
+  const handleBlockTap = useCallback((block: WorkspaceBlock) => {
+    tapBlock(block);
+  }, [tapBlock]);
 
   return (
     <View
@@ -202,7 +205,10 @@ export default function Workspace() {
                   isLast={index === displayBlocks.length - 1}
                   isDragging={isDragging}
                   isActive={activeBlockIndex === index}
-                  onEventTap={block.category === 'Eventos' ? () => handleEventTap(block) : undefined}
+                  onEventTap={block.category === 'Eventos'
+                    ? () => handleEventTap(block, index)
+                    : undefined}
+                  onBlockTap={() => handleBlockTap(block)}
                 />
               </Animated.View>
 

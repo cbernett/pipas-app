@@ -1,15 +1,44 @@
-import React from 'react';
-import {
-  Modal, View, Text, TouchableOpacity, StyleSheet, Pressable,
-} from 'react-native';
+import React, { useState } from 'react';
+import { Modal, View, Text, TouchableOpacity, StyleSheet, Pressable, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, BoardStatus } from '../context/AppContext';
+import { board } from '../serial';
 
 export default function BoardStatusSheet() {
-  const { boardSheetOpen, setBoardSheetOpen, boardStatus, setBoardStatus, isRunning, stopRun, setUsbDisconnectedWhileRunning } = useApp();
+  const {
+    boardSheetOpen, setBoardSheetOpen,
+    boardStatus, setBoardStatus,
+    isRunning, stopRun,
+    setUsbDisconnectedWhileRunning,
+    simulateTouch,
+  } = useApp();
   const insets = useSafeAreaInsets();
+  const [connecting, setConnecting] = useState(false);
 
-  const handleDisconnect = () => {
+  const handleConnectUSB = async () => {
+    if (!board.isSupported) {
+      Alert.alert(
+        'Web Serial não disponível',
+        'Use o Google Chrome para conectar via USB. O Safari e Firefox não suportam Web Serial.',
+      );
+      return;
+    }
+    try {
+      setConnecting(true);
+      await board.connect();
+      setBoardStatus('connected');
+      setBoardSheetOpen(false);
+    } catch (e: any) {
+      if (!e?.message?.includes('No port selected')) {
+        setBoardStatus('error');
+      }
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    await board.disconnect();
     setBoardStatus('disconnected');
     if (isRunning) {
       stopRun();
@@ -18,25 +47,24 @@ export default function BoardStatusSheet() {
     setBoardSheetOpen(false);
   };
 
-  const handleConnect = () => {
-    setBoardStatus('connected');
-    setUsbDisconnectedWhileRunning(false);
-    setBoardSheetOpen(false);
+  const handleRetry = async () => {
+    await board.disconnect();
+    await handleConnectUSB();
   };
 
-  const handleError = () => {
-    setBoardStatus('error');
+  const handleSimulate = (pad: number) => {
     setBoardSheetOpen(false);
+    simulateTouch(pad);
   };
 
   const statusLabel =
     boardStatus === 'connected' ? 'Conectada via USB' :
-    boardStatus === 'error' ? 'Erro de comunicação com a placa' :
-    'Nenhuma placa encontrada';
+    boardStatus === 'error'     ? 'Erro de comunicação com a placa' :
+                                  'Nenhuma placa encontrada';
 
   const statusColor =
     boardStatus === 'connected' ? '#22C55E' :
-    boardStatus === 'error' ? '#EF4444' : '#999';
+    boardStatus === 'error'     ? '#EF4444' : '#999';
 
   return (
     <Modal
@@ -47,7 +75,6 @@ export default function BoardStatusSheet() {
     >
       <Pressable style={styles.backdrop} onPress={() => setBoardSheetOpen(false)}>
         <Pressable style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
-          {/* Handle */}
           <View style={styles.handle} />
 
           {/* Board icon */}
@@ -60,32 +87,53 @@ export default function BoardStatusSheet() {
 
           <View style={styles.divider} />
 
+          {/* Actions based on status */}
           {boardStatus === 'connected' && (
             <>
-              <ActionButton label="Testar LED" onPress={() => setBoardSheetOpen(false)} color="#9268F6" />
-              <ActionButton label="Testar Motor" onPress={() => setBoardSheetOpen(false)} color="#5F95F7" />
-              <ActionButton label="Desconectar" onPress={handleDisconnect} color="#EF4444" outline />
+              <ActionButton label="Testar LED" color="#9268F6" onPress={() => setBoardSheetOpen(false)} />
+              <ActionButton label="Testar Motor" color="#5F95F7" onPress={() => setBoardSheetOpen(false)} />
+              <ActionButton label="Desconectar" color="#EF4444" outline onPress={handleDisconnect} />
             </>
           )}
-
           {boardStatus === 'disconnected' && (
             <>
-              <ActionButton label="Conectar USB" onPress={handleConnect} color="#22C55E" />
-              <ActionButton label="Tentar novamente" onPress={handleConnect} color="#5F95F7" outline />
+              <ActionButton
+                label={connecting ? 'Conectando…' : 'Conectar USB'}
+                color="#22C55E"
+                onPress={handleConnectUSB}
+                disabled={connecting}
+              />
+              <ActionButton label="Tentar novamente" color="#5F95F7" outline onPress={handleRetry} />
             </>
           )}
-
           {boardStatus === 'error' && (
             <>
-              <ActionButton label="Tentar novamente" onPress={handleConnect} color="#5F95F7" />
-              <ActionButton label="Desconectar" onPress={handleDisconnect} color="#EF4444" outline />
+              <ActionButton label="Tentar novamente" color="#5F95F7" onPress={handleRetry} />
+              <ActionButton label="Desconectar" color="#EF4444" outline onPress={handleDisconnect} />
             </>
           )}
 
-          {/* Dev switcher */}
+          {/* ── Simulation section ─────────────────────────── */}
+          <View style={styles.simSection}>
+            <Text style={styles.simTitle}>SIMULAR TOQUE (para testes)</Text>
+            <View style={styles.simRow}>
+              {[1, 2, 3].map(pad => (
+                <TouchableOpacity
+                  key={pad}
+                  style={styles.simBtn}
+                  onPress={() => handleSimulate(pad)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.simBtnText}>Toque {pad}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* Status switcher for board state */}
           <View style={styles.devRow}>
-            <Text style={styles.devLabel}>Simular estado: </Text>
-            {(['connected', 'disconnected', 'error'] as BoardStatus[]).map((s) => (
+            <Text style={styles.devLabel}>Estado: </Text>
+            {(['connected', 'disconnected', 'error'] as BoardStatus[]).map(s => (
               <TouchableOpacity
                 key={s}
                 style={[styles.devChip, boardStatus === s && styles.devChipActive]}
@@ -101,15 +149,21 @@ export default function BoardStatusSheet() {
   );
 }
 
-function ActionButton({ label, onPress, color, outline }: { label: string; onPress: () => void; color: string; outline?: boolean }) {
+function ActionButton({ label, onPress, color, outline, disabled }: {
+  label: string; onPress: () => void; color: string; outline?: boolean; disabled?: boolean;
+}) {
   return (
     <TouchableOpacity
       style={[
         styles.actionBtn,
-        outline ? { borderWidth: 2, borderColor: color, backgroundColor: 'transparent' } : { backgroundColor: color },
+        outline
+          ? { borderWidth: 2, borderColor: color, backgroundColor: 'transparent' }
+          : { backgroundColor: color },
+        disabled && { opacity: 0.5 },
       ]}
       onPress={onPress}
       activeOpacity={0.8}
+      disabled={disabled}
     >
       <Text style={[styles.actionBtnText, outline && { color }]}>{label}</Text>
     </TouchableOpacity>
@@ -118,91 +172,54 @@ function ActionButton({ label, onPress, color, outline }: { label: string; onPre
 
 const styles = StyleSheet.create({
   backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end',
   },
   sheet: {
     backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    alignItems: 'center',
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    padding: 24, alignItems: 'center',
   },
   handle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#DDD',
-    marginBottom: 24,
+    width: 40, height: 4, borderRadius: 2,
+    backgroundColor: '#DDD', marginBottom: 24,
   },
   boardIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    borderWidth: 3,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
+    width: 64, height: 64, borderRadius: 32, borderWidth: 3,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 16,
   },
-  boardInner: {
-    width: 28,
-    height: 20,
-    borderRadius: 4,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#1A1A2E',
-    marginBottom: 6,
-  },
-  status: {
-    fontSize: 15,
-    fontWeight: '500',
-    marginBottom: 4,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#F0F0F0',
-    alignSelf: 'stretch',
-    marginVertical: 20,
-  },
+  boardInner: { width: 28, height: 20, borderRadius: 4 },
+  title: { fontSize: 22, fontWeight: '800', color: '#1A1A2E', marginBottom: 6 },
+  status: { fontSize: 15, fontWeight: '500', marginBottom: 4 },
+  divider: { height: 1, backgroundColor: '#F0F0F0', alignSelf: 'stretch', marginVertical: 20 },
   actionBtn: {
-    alignSelf: 'stretch',
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginBottom: 12,
+    alignSelf: 'stretch', borderRadius: 14,
+    paddingVertical: 16, alignItems: 'center', marginBottom: 12,
   },
-  actionBtnText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
+  actionBtnText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
+
+  // Simulation
+  simSection: { alignSelf: 'stretch', marginTop: 4, marginBottom: 16 },
+  simTitle: {
+    fontSize: 11, fontWeight: '700', color: '#AAA', letterSpacing: 1,
+    textAlign: 'center', marginBottom: 12,
   },
+  simRow: { flexDirection: 'row', gap: 10 },
+  simBtn: {
+    flex: 1, backgroundColor: '#F0EEFF', borderRadius: 12,
+    paddingVertical: 14, alignItems: 'center',
+  },
+  simBtnText: { color: '#6B4FBB', fontSize: 14, fontWeight: '700' },
+
+  // Dev status switcher
   devRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    marginTop: 8,
-    gap: 6,
-    opacity: 0.5,
+    flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap',
+    gap: 6, opacity: 0.4,
   },
-  devLabel: {
-    fontSize: 11,
-    color: '#666',
-  },
+  devLabel: { fontSize: 11, color: '#666' },
   devChip: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    backgroundColor: '#EEE',
-    borderRadius: 6,
+    paddingHorizontal: 8, paddingVertical: 4,
+    backgroundColor: '#EEE', borderRadius: 6,
   },
-  devChipActive: {
-    backgroundColor: '#6B4FBB',
-  },
-  devChipText: {
-    fontSize: 11,
-    color: '#333',
-    fontWeight: '600',
-  },
+  devChipActive: { backgroundColor: '#6B4FBB' },
+  devChipText: { fontSize: 11, color: '#333', fontWeight: '600' },
 });

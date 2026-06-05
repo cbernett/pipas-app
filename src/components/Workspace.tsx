@@ -1,100 +1,110 @@
 import React, { useRef, useState, useCallback } from 'react';
 import {
-  View, ScrollView, Text, StyleSheet, TouchableOpacity,
-  PanResponder, Animated, LayoutChangeEvent,
+  View, ScrollView, Text, StyleSheet, PanResponder,
+  Animated, LayoutChangeEvent, Dimensions,
 } from 'react-native';
 import { useApp, WorkspaceBlock } from '../context/AppContext';
-import CodeBlock from './CodeBlock';
+import CodeBlock, { TAB_H } from './CodeBlock';
 import { CATEGORY_COLORS } from '../data/blocks';
 
+const { height: SCREEN_H } = Dimensions.get('window');
 const DOTS_SPACING = 24;
+const TRASH_ZONE_H = 80;
 
 const EXAMPLE_PROGRAM: WorkspaceBlock[] = [
   { id: 'ex_1', defId: 'evt_touch', label: 'quando eu receber toque 1', category: 'Eventos', color: CATEGORY_COLORS['Eventos'] },
-  { id: 'ex_2', defId: 'som_1', label: 'toque som meow!', category: 'Som', color: CATEGORY_COLORS['Som'] },
-  { id: 'ex_3', defId: 'ctrl_1', label: 'espere 1 segundo', category: 'Controle', color: CATEGORY_COLORS['Controle'] },
-  { id: 'ex_4', defId: 'ctrl_2', label: 'repita 3 vezes', category: 'Controle', color: CATEGORY_COLORS['Controle'] },
-  { id: 'ex_5', defId: 'luz_4', label: 'ligue LED 3', category: 'Luz', color: CATEGORY_COLORS['Luz'] },
-  { id: 'ex_6', defId: 'ctrl_1b', label: 'espere 0.2 segundo', category: 'Controle', color: CATEGORY_COLORS['Controle'] },
+  { id: 'ex_2', defId: 'som_1',    label: 'toque som meow!',           category: 'Som',     color: CATEGORY_COLORS['Som'] },
+  { id: 'ex_3', defId: 'ctrl_1',   label: 'espere 1 segundo',          category: 'Controle', color: CATEGORY_COLORS['Controle'] },
+  { id: 'ex_4', defId: 'ctrl_2',   label: 'repita 3 vezes',            category: 'Controle', color: CATEGORY_COLORS['Controle'] },
+  { id: 'ex_5', defId: 'luz_4',    label: 'ligue LED 3',               category: 'Luz',     color: CATEGORY_COLORS['Luz'] },
+  { id: 'ex_6', defId: 'ctrl_1b',  label: 'espere 0.2 segundo',        category: 'Controle', color: CATEGORY_COLORS['Controle'] },
 ];
 
 export default function Workspace() {
   const {
     workspaceBlocks, setWorkspaceBlocks,
-    isRunning, activeBlockIndex, usbDisconnectedWhileRunning, setLibraryOpen,
+    isRunning, activeBlockIndex,
+    usbDisconnectedWhileRunning, setLibraryOpen,
   } = useApp();
 
   const displayBlocks = workspaceBlocks.length > 0 ? workspaceBlocks : EXAMPLE_PROGRAM;
 
   // ── Drag state ──────────────────────────────────────────────────────────
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
-  const [dropIndex, setDropIndex] = useState<number | null>(null);
-  const dragAnim = useRef(new Animated.Value(0)).current;
-  const draggingIndexRef = useRef<number | null>(null);
-  const itemLayouts = useRef<{ y: number; height: number }[]>([]);
-  const scrollOffsetRef = useRef(0);
-  const containerYRef = useRef(0);
+  const [dropIndex, setDropIndex]         = useState<number | null>(null);
+  const [overTrash, setOverTrash]         = useState(false);
+  const dragAnim                          = useRef(new Animated.Value(0)).current;
+  const draggingIndexRef                  = useRef<number | null>(null);
+  const itemLayouts                       = useRef<{ y: number; height: number }[]>([]);
+  const scrollOffsetRef                   = useRef(0);
+  const containerYRef                     = useRef(0);
+  const containerHRef                     = useRef(0);
 
   const getDropIndex = useCallback((pageY: number): number => {
     const relY = pageY - containerYRef.current + scrollOffsetRef.current;
     for (let i = 0; i < itemLayouts.current.length; i++) {
-      const layout = itemLayouts.current[i];
-      if (!layout) continue;
-      const mid = layout.y + layout.height / 2;
-      if (relY < mid) return i;
+      const l = itemLayouts.current[i];
+      if (l && relY < l.y + l.height / 2) return i;
     }
     return itemLayouts.current.length;
   }, []);
 
+  const isOverTrashZone = (pageY: number) =>
+    pageY > containerYRef.current + containerHRef.current - TRASH_ZONE_H;
+
   const makePanResponder = useCallback((index: number) =>
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 4,
+      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 5 || Math.abs(g.dx) > 5,
       onPanResponderGrant: () => {
         draggingIndexRef.current = index;
         setDraggingIndex(index);
+        setOverTrash(false);
         dragAnim.setValue(0);
       },
       onPanResponderMove: (e, g) => {
         dragAnim.setValue(g.dy);
-        setDropIndex(getDropIndex(e.nativeEvent.pageY));
+        const py = e.nativeEvent.pageY;
+        setOverTrash(isOverTrashZone(py));
+        if (!isOverTrashZone(py)) setDropIndex(getDropIndex(py));
       },
       onPanResponderRelease: (e, g) => {
         const from = draggingIndexRef.current!;
-        let to = getDropIndex(e.nativeEvent.pageY);
-        // If dragged far right (>120px), treat as delete
-        if (g.dx > 120) {
-          const blocks = displayBlocks.filter((_, i) => i !== from);
-          setWorkspaceBlocks(blocks.length ? blocks : []);
-        } else if (to !== from && to !== from + 1) {
-          const arr = [...displayBlocks];
-          const [moved] = arr.splice(from, 1);
-          const insertAt = to > from ? to - 1 : to;
-          arr.splice(Math.max(0, insertAt), 0, moved);
-          setWorkspaceBlocks(arr);
+        if (isOverTrashZone(e.nativeEvent.pageY)) {
+          // Delete the block
+          const next = displayBlocks.filter((_, i) => i !== from);
+          setWorkspaceBlocks(next);
+        } else {
+          let to = getDropIndex(e.nativeEvent.pageY);
+          if (to !== from && to !== from + 1) {
+            const arr = [...displayBlocks];
+            const [moved] = arr.splice(from, 1);
+            arr.splice(to > from ? to - 1 : to, 0, moved);
+            setWorkspaceBlocks(arr);
+          }
         }
         setDraggingIndex(null);
         setDropIndex(null);
+        setOverTrash(false);
         dragAnim.setValue(0);
         draggingIndexRef.current = null;
       },
       onPanResponderTerminate: () => {
         setDraggingIndex(null);
         setDropIndex(null);
+        setOverTrash(false);
         dragAnim.setValue(0);
       },
     }),
   [displayBlocks, getDropIndex]);
 
-  const handleDelete = (index: number) => {
-    const blocks = displayBlocks.filter((_, i) => i !== index);
-    setWorkspaceBlocks(blocks);
-  };
-
   return (
     <View
       style={styles.container}
-      onLayout={(e) => { containerYRef.current = e.nativeEvent.layout.y; }}
+      onLayout={(e) => {
+        containerYRef.current = e.nativeEvent.layout.y;
+        containerHRef.current = e.nativeEvent.layout.height;
+      }}
     >
       {/* Dotted grid */}
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
@@ -106,7 +116,7 @@ export default function Workspace() {
         <View style={styles.runningBar} pointerEvents="none" />
       )}
 
-      {/* USB error banner */}
+      {/* USB banner */}
       {usbDisconnectedWhileRunning && (
         <View style={styles.usbBanner}>
           <Text style={styles.usbBannerText}>⚠️  Placa desconectada</Text>
@@ -122,8 +132,8 @@ export default function Workspace() {
         {displayBlocks.map((block, index) => {
           const panResponder = makePanResponder(index);
           const isDragging = draggingIndex === index;
-          const isDropTarget = dropIndex === index;
-          const isDropTargetAfter = dropIndex === index + 1;
+          const isDropTarget = dropIndex === index && draggingIndex !== null && draggingIndex !== index;
+          const isDropTargetAfter = dropIndex === index + 1 && draggingIndex !== null && draggingIndex !== index;
 
           return (
             <View
@@ -135,33 +145,17 @@ export default function Workspace() {
                 };
               }}
             >
-              {/* Drop indicator above */}
-              {isDropTarget && draggingIndex !== null && draggingIndex !== index && (
-                <DropIndicator color={displayBlocks[draggingIndex]?.color} />
-              )}
+              {isDropTarget && <DropLine color={displayBlocks[draggingIndex!]?.color} />}
 
               <Animated.View
+                {...panResponder.panHandlers}
                 style={[
-                  styles.blockRow,
                   isDragging && {
                     transform: [{ translateY: dragAnim }],
                     zIndex: 100,
-                    opacity: 0.95,
                   },
-                  activeBlockIndex === index && styles.blockRowActive,
                 ]}
               >
-                {/* Drag handle */}
-                <View {...panResponder.panHandlers} style={styles.dragHandle}>
-                  <View style={styles.dragDot} />
-                  <View style={styles.dragDot} />
-                  <View style={styles.dragDot} />
-                  <View style={styles.dragDot} />
-                  <View style={styles.dragDot} />
-                  <View style={styles.dragDot} />
-                </View>
-
-                {/* Block */}
                 <CodeBlock
                   block={block}
                   isFirst={index === 0}
@@ -169,73 +163,49 @@ export default function Workspace() {
                   isDragging={isDragging}
                   isActive={activeBlockIndex === index}
                 />
-
-                {/* Delete button */}
-                <TouchableOpacity
-                  style={styles.deleteBtn}
-                  onPress={() => handleDelete(index)}
-                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                >
-                  <Text style={styles.deleteBtnText}>✕</Text>
-                </TouchableOpacity>
               </Animated.View>
 
-              {/* Drop indicator below last item */}
-              {isDropTargetAfter && draggingIndex !== null && draggingIndex !== index && (
-                <DropIndicator color={displayBlocks[draggingIndex]?.color} />
-              )}
+              {isDropTargetAfter && <DropLine color={displayBlocks[draggingIndex!]?.color} />}
             </View>
           );
         })}
 
-        {/* Empty state / add hint */}
         {displayBlocks.length === 0 && (
           <View style={styles.emptyState}>
             <Text style={styles.emptyText}>Arraste blocos da{'\n'}biblioteca para cá</Text>
           </View>
         )}
-
-        <TouchableOpacity style={styles.addHint} onPress={() => setLibraryOpen(true)}>
-          <View style={styles.addIcon}>
-            <Text style={styles.addPlus}>+</Text>
-          </View>
-          <Text style={styles.addText}>Adicionar bloco</Text>
-        </TouchableOpacity>
-
-        {/* Drag-to-delete hint */}
-        {draggingIndex !== null && (
-          <View style={styles.deleteHint}>
-            <Text style={styles.deleteHintText}>→ arraste para direita para remover</Text>
-          </View>
-        )}
       </ScrollView>
+
+      {/* Trash zone — appears while dragging */}
+      {draggingIndex !== null && (
+        <View style={[styles.trashZone, overTrash && styles.trashZoneActive]}>
+          <Text style={styles.trashIcon}>{overTrash ? '🗑️' : '↓'}</Text>
+          <Text style={styles.trashLabel}>
+            {overTrash ? 'Solte para remover' : 'Arraste aqui para remover'}
+          </Text>
+        </View>
+      )}
     </View>
   );
 }
 
-function DropIndicator({ color }: { color?: string }) {
-  return (
-    <View style={[styles.dropIndicator, { backgroundColor: color ?? '#FFF' }]} />
-  );
+function DropLine({ color }: { color?: string }) {
+  return <View style={[styles.dropLine, { backgroundColor: color ?? '#FFF' }]} />;
 }
 
 function DotGrid() {
-  const dots = [];
+  const dots: React.ReactNode[] = [];
   for (let row = 0; row < 30; row++) {
     for (let col = 0; col < 18; col++) {
       dots.push(
-        <View
-          key={`${row}-${col}`}
-          style={{
-            position: 'absolute',
-            top: row * DOTS_SPACING + 12,
-            left: col * DOTS_SPACING + 12,
-            width: 3,
-            height: 3,
-            borderRadius: 1.5,
-            backgroundColor: 'rgba(255,255,255,0.07)',
-          }}
-        />
+        <View key={`${row}-${col}`} style={{
+          position: 'absolute',
+          top: row * DOTS_SPACING + 12,
+          left: col * DOTS_SPACING + 12,
+          width: 3, height: 3, borderRadius: 1.5,
+          backgroundColor: 'rgba(255,255,255,0.07)',
+        }} />
       );
     }
   }
@@ -243,129 +213,59 @@ function DotGrid() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#1A1F2E',
-  },
+  container: { flex: 1, backgroundColor: '#1A1F2E' },
+
   scrollContent: {
-    padding: 20,
+    padding: 24,
     paddingBottom: 140,
+    gap: 0,
   },
-  blockRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  dragHandle: {
-    width: 20,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 3,
-    paddingVertical: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-    opacity: 0.4,
-  },
-  dragDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#FFFFFF',
-  },
-  deleteBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 4,
-  },
-  deleteBtnText: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  dropIndicator: {
-    height: 4,
-    borderRadius: 2,
-    marginVertical: 2,
-    marginLeft: 28,
-    opacity: 0.8,
-  },
+
   runningBar: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 3,
-    backgroundColor: '#22C55E',
-    zIndex: 10,
+    position: 'absolute', top: 0, left: 0, right: 0,
+    height: 3, backgroundColor: '#22C55E', zIndex: 10,
   },
   usbBanner: {
     backgroundColor: '#EF4444',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    zIndex: 20,
+    paddingVertical: 12, paddingHorizontal: 20, zIndex: 20,
   },
   usbBannerText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700',
-    textAlign: 'center',
+    color: '#FFF', fontSize: 15, fontWeight: '700', textAlign: 'center',
   },
+
+  dropLine: {
+    height: 4, borderRadius: 2,
+    marginVertical: 3,
+    opacity: 0.85,
+  },
+
   emptyState: {
-    marginTop: 60,
-    alignItems: 'center',
+    marginTop: 80, alignItems: 'center',
   },
   emptyText: {
     color: 'rgba(255,255,255,0.2)',
-    fontSize: 18,
-    fontWeight: '600',
-    textAlign: 'center',
-    lineHeight: 28,
+    fontSize: 18, fontWeight: '600', textAlign: 'center', lineHeight: 28,
   },
-  addHint: {
-    marginTop: 28,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    opacity: 0.45,
-    marginLeft: 28,
-  },
-  addIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.4)',
-    borderStyle: 'dashed',
+
+  // Trash zone
+  trashZone: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    height: TRASH_ZONE_H,
+    backgroundColor: 'rgba(60,30,30,0.85)',
+    borderTopWidth: 2,
+    borderTopColor: 'rgba(239,68,68,0.4)',
     alignItems: 'center',
     justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 10,
   },
-  addPlus: {
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 18,
-    fontWeight: '600',
+  trashZoneActive: {
+    backgroundColor: 'rgba(239,68,68,0.85)',
+    borderTopColor: '#EF4444',
   },
-  addText: {
-    color: 'rgba(255,255,255,0.4)',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  deleteHint: {
-    marginTop: 12,
-    marginLeft: 28,
-  },
-  deleteHintText: {
-    color: 'rgba(255,100,100,0.5)',
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  blockRowActive: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 14,
-    marginHorizontal: -6,
-    paddingHorizontal: 6,
+  trashIcon: { fontSize: 22 },
+  trashLabel: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 14, fontWeight: '600',
   },
 });

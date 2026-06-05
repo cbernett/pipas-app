@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, useRef, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useRef, useCallback, useEffect, ReactNode } from 'react';
 import { BlockDef } from '../data/blocks';
 import { playSound } from '../audio';
+import { board } from '../serial';
 
 export type BoardStatus = 'connected' | 'disconnected' | 'error';
 
@@ -19,6 +20,7 @@ interface AppContextType {
   activeBlockIndex: number | null;
   startRun: (blocks: WorkspaceBlock[]) => void;
   stopRun: () => void;
+  simulateTouch: (pad: number) => void;
   activeTab: 'codigo' | 'sons';
   setActiveTab: (t: 'codigo' | 'sons') => void;
   workspaceBlocks: WorkspaceBlock[];
@@ -78,9 +80,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [draggingBlock, setDraggingBlock] = useState<BlockDef | null>(null);
 
   const runAbortRef = useRef(false);
+  const workspaceBlocksRef = useRef<WorkspaceBlock[]>([]);
+  const isRunningRef = useRef(false);
+
+  // Keep refs in sync so touch handler can access latest values
+  const _setWorkspaceBlocks = useCallback((b: WorkspaceBlock[]) => {
+    workspaceBlocksRef.current = b;
+    setWorkspaceBlocks(b);
+  }, []);
+
+  // Find and run the script triggered by a touch pad event
+  const handleTouchPad = useCallback((pad: number) => {
+    if (isRunningRef.current) return; // already running
+    const blocks = workspaceBlocksRef.current;
+    // Find the first event block that matches this touch pad
+    const startIdx = blocks.findIndex(b =>
+      b.category === 'Eventos' && b.label.toLowerCase().includes(`toque ${pad}`)
+    );
+    if (startIdx === -1) return;
+    // Run from that block downward
+    startRunRef.current(blocks.slice(startIdx));
+  }, []);
+
+  const startRunRef = useRef<(blocks: WorkspaceBlock[]) => void>(() => {});
+
+  // Subscribe to real board touch events
+  useEffect(() => {
+    return board.onTouch(handleTouchPad);
+  }, [handleTouchPad]);
 
   const stopRun = useCallback(() => {
     runAbortRef.current = true;
+    isRunningRef.current = false;
     setIsRunning(false);
     setActiveBlockIndex(null);
     setUsbDisconnectedWhileRunning(false);
@@ -89,6 +120,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const startRun = useCallback(async (blocks: WorkspaceBlock[]) => {
     if (!blocks.length) return;
     runAbortRef.current = false;
+    isRunningRef.current = true;
     setIsRunning(true);
     setActiveBlockIndex(null);
 
@@ -115,17 +147,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!runAbortRef.current) {
       setActiveBlockIndex(null);
       setIsRunning(false);
+      isRunningRef.current = false;
     }
   }, []);
+
+  // Keep startRunRef in sync so handleTouchPad can call startRun
+  useEffect(() => { startRunRef.current = startRun; }, [startRun]);
+
+  const simulateTouch = useCallback((pad: number) => {
+    handleTouchPad(pad);
+  }, [handleTouchPad]);
 
   return (
     <AppContext.Provider
       value={{
         boardStatus, setBoardStatus,
         isRunning, activeBlockIndex,
-        startRun, stopRun,
+        startRun, stopRun, simulateTouch,
         activeTab, setActiveTab,
-        workspaceBlocks, setWorkspaceBlocks,
+        workspaceBlocks, setWorkspaceBlocks: _setWorkspaceBlocks,
         libraryOpen, setLibraryOpen,
         expandedCategory, setExpandedCategory,
         boardSheetOpen, setBoardSheetOpen,

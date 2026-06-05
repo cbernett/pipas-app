@@ -5,15 +5,15 @@ import {
 import { WorkspaceBlock } from '../context/AppContext';
 import { BLOCK_TEMPLATES, CATEGORY_DARK, BlockParamDef } from '../data/blocks';
 
-const TAB_W = 30;
-const TAB_H = 10;
-const WORKSPACE_BG = '#1A1F2E';
+// Puzzle connector dimensions — tab is left-aligned, not centered
+export const TAB_W = 28;
+export const TAB_H = 9;
+export const TAB_LEFT = 18;
 
 interface Props {
   block: WorkspaceBlock;
   isFirst?: boolean;
   isLast?: boolean;
-  /** rendered inside library (no connectors, compact) */
   preview?: boolean;
   isDragging?: boolean;
   isActive?: boolean;
@@ -22,40 +22,41 @@ interface Props {
 export default function CodeBlock({ block, isFirst, isLast, preview, isDragging, isActive }: Props) {
   const isEvent = block.category === 'Eventos';
   const darkColor = CATEGORY_DARK[block.category as keyof typeof CATEGORY_DARK] ?? block.color;
-  const useDarkText = block.category === 'Eventos'; // yellow bg needs dark text
+  const useDarkText = block.category === 'Eventos';
 
   const parts = BLOCK_TEMPLATES[block.defId] ?? [block.label];
 
   return (
     <View style={[styles.wrapper, isDragging && styles.wrapperDragging]}>
-      {/* ── Notch slot at top (non-hat, non-preview blocks) ── */}
-      {!isEvent && !preview && (
-        <View style={styles.notchRow}>
-          <View style={[styles.notch, { backgroundColor: darkColor }]} />
-        </View>
-      )}
 
-      {/* ── Hat bump for event blocks ── */}
+      {/* ── Event hat cap ───────────────────────────────────────────── */}
       {isEvent && !preview && (
-        <View style={styles.hatRow}>
-          <View style={[styles.hat, { backgroundColor: block.color }]}>
-            <Text style={styles.hatIcon}>⚑</Text>
+        <View style={styles.hatCapRow}>
+          <View style={[styles.hatCap, { backgroundColor: block.color }]}>
+            <Text style={styles.hatCapIcon}>⚑</Text>
           </View>
         </View>
       )}
 
-      {/* ── Main block body ── */}
+      {/* ── Notch slot (top of non-event blocks) ────────────────────── */}
+      {!isEvent && !isFirst && !preview && (
+        <View style={styles.notchRow}>
+          <View style={[styles.notchSlot, { backgroundColor: darkColor }]} />
+        </View>
+      )}
+
+      {/* ── Main body ───────────────────────────────────────────────── */}
       <View style={[
         styles.body,
         { backgroundColor: block.color },
-        isEvent && styles.bodyEvent,
+        isEvent && styles.bodyHat,
         isDragging && styles.bodyDragging,
         isActive && styles.bodyActive,
       ]}>
-        <BlockLabel parts={parts} useDarkText={useDarkText} color={block.color} />
+        <BlockLabel parts={parts} useDarkText={useDarkText} />
       </View>
 
-      {/* ── Tab connector at bottom ── */}
+      {/* ── Tab connector (bottom of all non-last blocks) ───────────── */}
       {!isLast && !preview && (
         <View style={styles.tabRow}>
           <View style={[styles.tab, { backgroundColor: block.color }]} />
@@ -65,26 +66,20 @@ export default function CodeBlock({ block, isFirst, isLast, preview, isDragging,
   );
 }
 
-// ─── Label renderer with editable parameter bubbles ────────────────────────
+// ─── Label with editable bubbles ─────────────────────────────────────────────
 
 interface LabelProps {
   parts: Array<string | BlockParamDef>;
   useDarkText: boolean;
-  color: string;
 }
 
-function BlockLabel({ parts, useDarkText, color }: LabelProps) {
+function BlockLabel({ parts, useDarkText }: LabelProps) {
   const textColor = useDarkText ? '#1A1A2E' : '#FFFFFF';
-
   return (
     <View style={styles.labelRow}>
       {parts.map((part, i) => {
         if (typeof part === 'string') {
-          return (
-            <Text key={i} style={[styles.labelText, { color: textColor }]}>
-              {part}
-            </Text>
-          );
+          return <Text key={i} style={[styles.labelText, { color: textColor }]}>{part}</Text>;
         }
         if (part.type === 'number') {
           return <NumberBubble key={i} value={part.value} />;
@@ -97,8 +92,10 @@ function BlockLabel({ parts, useDarkText, color }: LabelProps) {
 
 function NumberBubble({ value }: { value: string }) {
   const [val, setVal] = useState(value);
+  // Width scales with content (1 char = ~14px, min 36px)
+  const inputW = Math.max(36, val.length * 14 + 16);
   return (
-    <View style={styles.numberBubble}>
+    <View style={[styles.numberBubble, { width: inputW }]}>
       <TextInput
         style={styles.numberInput}
         value={val}
@@ -113,12 +110,10 @@ function NumberBubble({ value }: { value: string }) {
 function DropdownBubble({ value, options }: { value: string; options?: string[] }) {
   const [val, setVal] = useState(value);
   const opts = options ?? [value];
-  const nextIndex = (opts.indexOf(val) + 1) % opts.length;
-
   return (
     <TouchableOpacity
       style={styles.dropdownBubble}
-      onPress={() => setVal(opts[nextIndex])}
+      onPress={() => setVal(opts[(opts.indexOf(val) + 1) % opts.length])}
       activeOpacity={0.8}
     >
       <Text style={styles.dropdownText}>{val}</Text>
@@ -127,7 +122,7 @@ function DropdownBubble({ value, options }: { value: string; options?: string[] 
   );
 }
 
-// ─── Styles ────────────────────────────────────────────────────────────────
+// ─── Styles ──────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   wrapper: {
@@ -135,88 +130,85 @@ const styles = StyleSheet.create({
     minWidth: 180,
   },
   wrapperDragging: {
-    opacity: 0.85,
+    opacity: 0.9,
   },
 
-  // Notch slot (female connector)
-  notchRow: {
-    height: TAB_H,
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    zIndex: 2,
+  // Hat cap — sits above the event block body, left-aligned
+  hatCapRow: {
+    paddingLeft: TAB_LEFT,
   },
-  notch: {
-    width: TAB_W,
-    height: TAB_H,
-    borderBottomLeftRadius: 6,
-    borderBottomRightRadius: 6,
-  },
-
-  // Hat (event blocks)
-  hatRow: {
-    alignItems: 'flex-start',
-    paddingLeft: 16,
-  },
-  hat: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderTopLeftRadius: 14,
-    borderTopRightRadius: 14,
-    borderBottomRightRadius: 14,
+  hatCap: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    borderBottomRightRadius: 12,
+    alignSelf: 'flex-start',
   },
-  hatIcon: {
+  hatCapIcon: {
     fontSize: 13,
   },
 
-  // Main body
+  // Notch slot — the "female" connector, darker tint, left-aligned
+  notchRow: {
+    paddingLeft: TAB_LEFT,
+  },
+  notchSlot: {
+    width: TAB_W,
+    height: TAB_H,
+    borderBottomLeftRadius: 5,
+    borderBottomRightRadius: 5,
+  },
+
+  // Block body
   body: {
-    paddingVertical: 12,
+    paddingVertical: 13,
     paddingHorizontal: 16,
     minHeight: 52,
+    borderRadius: 8,
     justifyContent: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
     shadowRadius: 4,
     elevation: 4,
   },
-  bodyEvent: {
-    borderTopRightRadius: 12,
-    borderBottomLeftRadius: 6,
-    borderBottomRightRadius: 6,
+  bodyHat: {
+    // event block body: the hat cap above provides the top shape
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 8,
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
   },
   bodyDragging: {
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 12,
+    shadowOpacity: 0.5,
+    shadowRadius: 14,
+    elevation: 14,
+    transform: [{ scale: 1.03 }],
   },
   bodyActive: {
-    shadowColor: '#FFFFFF',
-    shadowOpacity: 0.6,
-    shadowRadius: 16,
-    elevation: 16,
     borderWidth: 2.5,
-    borderColor: 'rgba(255,255,255,0.85)',
+    borderColor: 'rgba(255,255,255,0.9)',
+    shadowColor: '#FFF',
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
   },
 
-  // Tab (male connector)
+  // Tab — the "male" connector, same color as block, left-aligned
   tabRow: {
-    height: TAB_H,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    zIndex: 2,
+    paddingLeft: TAB_LEFT,
   },
   tab: {
     width: TAB_W,
     height: TAB_H,
-    borderBottomLeftRadius: 6,
-    borderBottomRightRadius: 6,
+    borderBottomLeftRadius: 5,
+    borderBottomRightRadius: 5,
   },
 
-  // Label
+  // Label row
   labelRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -228,12 +220,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Number bubble
+  // Number bubble — auto-width
   numberBubble: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    paddingHorizontal: 2,
-    minWidth: 36,
+    borderRadius: 6,
   },
   numberInput: {
     color: '#1A1A2E',
@@ -241,14 +231,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
     paddingVertical: Platform.OS === 'ios' ? 4 : 2,
-    paddingHorizontal: 6,
-    minWidth: 36,
+    paddingHorizontal: 4,
   },
 
   // Dropdown bubble
   dropdownBubble: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 8,
+    borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 4,
     flexDirection: 'row',
@@ -261,7 +250,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   dropdownChevron: {
-    color: '#888',
+    color: '#666',
     fontSize: 11,
   },
 });

@@ -57,9 +57,23 @@ class PipasBoardSerial {
     }
     const nav = navigator as any;
     this.port = await nav.serial.requestPort();
-    await this.port.open({ baudRate: this.baud });
+    await this.port.open({
+      baudRate:    this.baud,
+      dataBits:    8,
+      stopBits:    1,
+      parity:      'none',
+      flowControl: 'none',
+    });
+
+    // Toggle DTR — some Arduinos need this to start streaming
+    try {
+      await this.port.setSignals({ dataTerminalReady: false, requestToSend: false });
+      await new Promise(r => setTimeout(r, 100));
+      await this.port.setSignals({ dataTerminalReady: true,  requestToSend: true  });
+    } catch (_) { /* port may not support signal control */ }
+
     this.running = true;
-    this.emitRaw(`[conectado a ${this.baud} baud]`);
+    this.emitRaw(`[conectado a ${this.baud} baud — aguardando dados…]`);
     this.readLoop();
   }
 

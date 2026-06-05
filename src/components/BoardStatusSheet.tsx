@@ -191,11 +191,13 @@ export default function BoardStatusSheet() {
                 ))
               )}
             </ScrollView>
-            {boardStatus === 'connected' && serialLog.length > 0 && (
-              <Text style={styles.monitorHint}>
-                Se toque na placa não aciona nada, compartilhe o que aparece aqui
-              </Text>
-            )}
+            <Text style={styles.monitorHint}>
+              {boardStatus === 'connected'
+                ? serialLog.filter(l => !l.startsWith('[')).length === 0
+                  ? '⚠️ Nenhum dado recebido ainda. Toque o pad e verifique também o Serial Monitor do Arduino IDE.'
+                  : 'Toque detectado! Verifique se o formato bate com o esperado.'
+                : 'Conecte a placa para ver os dados aqui.'}
+            </Text>
           </View>
 
           {/* Status switcher for board state */}

@@ -3,6 +3,7 @@ import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { playSound, stopAllSounds } from '../audio';
 
 interface Sound {
   id: string;
@@ -28,10 +29,15 @@ export default function SoundList({ onRecord, onSelectSound }: Props) {
   const [playingId, setPlayingId] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
 
-  const handlePlay = (sound: Sound) => {
-    setPlayingId(playingId === sound.id ? null : sound.id);
-    // Simulate playback stopping after 1.5s
-    setTimeout(() => setPlayingId(null), 1500);
+  const handlePlay = async (sound: Sound) => {
+    if (playingId === sound.id) {
+      await stopAllSounds();
+      setPlayingId(null);
+      return;
+    }
+    setPlayingId(sound.id);
+    await playSound(sound.name);
+    setPlayingId(null);
   };
 
   const handleDelete = (id: string) => {

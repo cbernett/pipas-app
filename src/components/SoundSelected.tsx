@@ -3,6 +3,7 @@ import {
   View, Text, TouchableOpacity, StyleSheet, TextInput, Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { playSound, stopAllSounds } from '../audio';
 
 interface Sound {
   id: string;
@@ -21,9 +22,15 @@ export default function SoundSelected({ sound, onBack, onDelete }: Props) {
   const [isPlaying, setIsPlaying] = useState(false);
   const insets = useSafeAreaInsets();
 
-  const handlePlay = () => {
+  const handlePlay = async () => {
+    if (isPlaying) {
+      await stopAllSounds();
+      setIsPlaying(false);
+      return;
+    }
     setIsPlaying(true);
-    setTimeout(() => setIsPlaying(false), 1500);
+    await playSound(name);
+    setIsPlaying(false);
   };
 
   const handleDelete = () => {

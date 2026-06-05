@@ -16,9 +16,10 @@ interface Props {
   /** rendered inside library (no connectors, compact) */
   preview?: boolean;
   isDragging?: boolean;
+  isActive?: boolean;
 }
 
-export default function CodeBlock({ block, isFirst, isLast, preview, isDragging }: Props) {
+export default function CodeBlock({ block, isFirst, isLast, preview, isDragging, isActive }: Props) {
   const isEvent = block.category === 'Eventos';
   const darkColor = CATEGORY_DARK[block.category as keyof typeof CATEGORY_DARK] ?? block.color;
   const useDarkText = block.category === 'Eventos'; // yellow bg needs dark text
@@ -49,6 +50,7 @@ export default function CodeBlock({ block, isFirst, isLast, preview, isDragging 
         { backgroundColor: block.color },
         isEvent && styles.bodyEvent,
         isDragging && styles.bodyDragging,
+        isActive && styles.bodyActive,
       ]}>
         <BlockLabel parts={parts} useDarkText={useDarkText} color={block.color} />
       </View>
@@ -190,6 +192,14 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 12,
     elevation: 12,
+  },
+  bodyActive: {
+    shadowColor: '#FFFFFF',
+    shadowOpacity: 0.6,
+    shadowRadius: 16,
+    elevation: 16,
+    borderWidth: 2.5,
+    borderColor: 'rgba(255,255,255,0.85)',
   },
 
   // Tab (male connector)

@@ -1,16 +1,27 @@
 import React from 'react';
 import { TouchableOpacity, View, StyleSheet } from 'react-native';
 import { useApp } from '../context/AppContext';
+import { CATEGORY_COLORS } from '../data/blocks';
+
+// The same example program used in Workspace (kept in sync)
+const EXAMPLE_PROGRAM = [
+  { id: 'ex_1', defId: 'evt_touch', label: 'quando eu receber toque 1', category: 'Eventos', color: CATEGORY_COLORS['Eventos'] },
+  { id: 'ex_2', defId: 'som_1', label: 'toque som meow!', category: 'Som', color: CATEGORY_COLORS['Som'] },
+  { id: 'ex_3', defId: 'ctrl_1', label: 'espere 1 segundo', category: 'Controle', color: CATEGORY_COLORS['Controle'] },
+  { id: 'ex_4', defId: 'ctrl_2', label: 'repita 3 vezes', category: 'Controle', color: CATEGORY_COLORS['Controle'] },
+  { id: 'ex_5', defId: 'luz_4', label: 'ligue LED 3', category: 'Luz', color: CATEGORY_COLORS['Luz'] },
+  { id: 'ex_6', defId: 'ctrl_1b', label: 'espere 0.2 segundo', category: 'Controle', color: CATEGORY_COLORS['Controle'] },
+];
 
 export default function RunButton() {
-  const { isRunning, setIsRunning, setUsbDisconnectedWhileRunning, usbDisconnectedWhileRunning } = useApp();
+  const { isRunning, startRun, stopRun, workspaceBlocks } = useApp();
 
   const handlePress = () => {
     if (isRunning) {
-      setIsRunning(false);
-      setUsbDisconnectedWhileRunning(false);
+      stopRun();
     } else {
-      setIsRunning(true);
+      const blocks = workspaceBlocks.length > 0 ? workspaceBlocks : EXAMPLE_PROGRAM;
+      startRun(blocks);
     }
   };
 
@@ -21,13 +32,11 @@ export default function RunButton() {
       activeOpacity={0.85}
     >
       {isRunning ? (
-        // Stop icon: two vertical bars
         <View style={styles.stopContainer}>
           <View style={styles.stopBar} />
           <View style={styles.stopBar} />
         </View>
       ) : (
-        // Play icon: triangle
         <View style={styles.playTriangle} />
       )}
     </TouchableOpacity>

@@ -6,12 +6,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, BoardStatus } from '../context/AppContext';
 
 export default function BoardStatusSheet() {
-  const { boardSheetOpen, setBoardSheetOpen, boardStatus, setBoardStatus, isRunning, setIsRunning, setUsbDisconnectedWhileRunning } = useApp();
+  const { boardSheetOpen, setBoardSheetOpen, boardStatus, setBoardStatus, isRunning, stopRun, setUsbDisconnectedWhileRunning } = useApp();
   const insets = useSafeAreaInsets();
 
   const handleDisconnect = () => {
     setBoardStatus('disconnected');
     if (isRunning) {
+      stopRun();
       setUsbDisconnectedWhileRunning(true);
     }
     setBoardSheetOpen(false);

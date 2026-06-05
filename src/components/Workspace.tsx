@@ -21,7 +21,7 @@ const EXAMPLE_PROGRAM: WorkspaceBlock[] = [
 export default function Workspace() {
   const {
     workspaceBlocks, setWorkspaceBlocks,
-    isRunning, usbDisconnectedWhileRunning, setLibraryOpen,
+    isRunning, activeBlockIndex, usbDisconnectedWhileRunning, setLibraryOpen,
   } = useApp();
 
   const displayBlocks = workspaceBlocks.length > 0 ? workspaceBlocks : EXAMPLE_PROGRAM;
@@ -148,6 +148,7 @@ export default function Workspace() {
                     zIndex: 100,
                     opacity: 0.95,
                   },
+                  activeBlockIndex === index && styles.blockRowActive,
                 ]}
               >
                 {/* Drag handle */}
@@ -166,6 +167,7 @@ export default function Workspace() {
                   isFirst={index === 0}
                   isLast={index === displayBlocks.length - 1}
                   isDragging={isDragging}
+                  isActive={activeBlockIndex === index}
                 />
 
                 {/* Delete button */}
@@ -359,5 +361,11 @@ const styles = StyleSheet.create({
     color: 'rgba(255,100,100,0.5)',
     fontSize: 12,
     fontWeight: '500',
+  },
+  blockRowActive: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 14,
+    marginHorizontal: -6,
+    paddingHorizontal: 6,
   },
 });

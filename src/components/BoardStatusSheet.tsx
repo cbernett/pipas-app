@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Modal, View, Text, TouchableOpacity, StyleSheet, Pressable, Alert, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, BoardStatus } from '../context/AppContext';
-import { board } from '../serial';
+import { board, COMMON_BAUD_RATES } from '../serial';
 
-const MAX_LOG = 30;
+const MAX_LOG = 60;
 
 export default function BoardStatusSheet() {
   const {
@@ -16,21 +16,23 @@ export default function BoardStatusSheet() {
   } = useApp();
   const insets = useSafeAreaInsets();
   const [connecting, setConnecting] = useState(false);
-  const [serialLog, setSerialLog] = useState<string[]>([]);
+  const [baud, setBaud]             = useState(9600);
+  const [serialLog, setSerialLog]   = useState<string[]>([]);
   const logScrollRef = useRef<ScrollView>(null);
 
-  // Subscribe to raw serial lines while the sheet is open
+  // Always subscribed (Modal stays mounted) — log persists across open/close
   useEffect(() => {
-    const unsub = board.onRawLine((line) => {
+    return board.onRawLine((line) => {
       setSerialLog(prev => {
         const next = [...prev, line];
         return next.length > MAX_LOG ? next.slice(-MAX_LOG) : next;
       });
-      // Scroll to bottom
-      setTimeout(() => logScrollRef.current?.scrollToEnd({ animated: true }), 50);
+      setTimeout(() => logScrollRef.current?.scrollToEnd({ animated: true }), 60);
     });
-    return unsub;
   }, []);
+
+  // Keep baud rate in sync with the board singleton
+  useEffect(() => { board.setBaudRate(baud); }, [baud]);
 
   const handleConnectUSB = async () => {
     if (!board.isSupported) {
@@ -114,6 +116,21 @@ export default function BoardStatusSheet() {
           )}
           {boardStatus === 'disconnected' && (
             <>
+              {/* Baud rate picker */}
+              <View style={styles.baudRow}>
+                <Text style={styles.baudLabel}>Baud rate:</Text>
+                {COMMON_BAUD_RATES.map(rate => (
+                  <TouchableOpacity
+                    key={rate}
+                    style={[styles.baudChip, baud === rate && styles.baudChipActive]}
+                    onPress={() => setBaud(rate)}
+                  >
+                    <Text style={[styles.baudChipText, baud === rate && styles.baudChipTextActive]}>
+                      {rate}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
               <ActionButton
                 label={connecting ? 'Conectando…' : 'Conectar USB'}
                 color="#22C55E"
@@ -260,6 +277,20 @@ const styles = StyleSheet.create({
     paddingVertical: 14, alignItems: 'center',
   },
   simBtnText: { color: '#6B4FBB', fontSize: 14, fontWeight: '700' },
+
+  // Baud rate selector
+  baudRow: {
+    flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap',
+    gap: 6, alignSelf: 'stretch', marginBottom: 12,
+  },
+  baudLabel: { fontSize: 13, color: '#666', fontWeight: '600' },
+  baudChip: {
+    paddingHorizontal: 10, paddingVertical: 6,
+    backgroundColor: '#F0F0F0', borderRadius: 8,
+  },
+  baudChipActive: { backgroundColor: '#6B4FBB' },
+  baudChipText: { fontSize: 12, color: '#444', fontWeight: '600' },
+  baudChipTextActive: { color: '#FFF' },
 
   // Serial monitor
   monitorSection: { alignSelf: 'stretch', marginBottom: 16 },

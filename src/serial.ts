@@ -11,8 +11,10 @@
  * connect() if your firmware uses a different rate.
  */
 
-type TouchListener  = (pad: number) => void;
+type TouchListener   = (pad: number) => void;
 type RawLineListener = (line: string) => void;
+
+export const COMMON_BAUD_RATES = [9600, 115200, 57600, 38400, 19200];
 
 class PipasBoardSerial {
   private port: any   = null;
@@ -57,10 +59,12 @@ class PipasBoardSerial {
     this.port = await nav.serial.requestPort();
     await this.port.open({ baudRate: this.baud });
     this.running = true;
+    this.emitRaw(`[conectado a ${this.baud} baud]`);
     this.readLoop();
   }
 
   async disconnect(): Promise<void> {
+    this.emitRaw('[desconectado]');
     this.running = false;
     try { await this.reader?.cancel(); } catch (_) {}
     try { await this.port?.close(); }    catch (_) {}
@@ -88,8 +92,10 @@ class PipasBoardSerial {
             this.parseLine(trimmed);
           }
         }
-      } catch (_) {
-        // port closed or disconnected
+      } catch (err: any) {
+        if (this.running) {
+          this.emitRaw(`[erro: ${err?.message ?? err}]`);
+        }
       } finally {
         this.reader?.releaseLock();
         this.reader = null;

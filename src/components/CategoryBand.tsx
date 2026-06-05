@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
-import { BlockDef, CATEGORY_COLORS, BlockCategory } from '../data/blocks';
-import { useApp } from '../context/AppContext';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { BlockDef, CATEGORY_COLORS, CATEGORY_DARK, BlockCategory, BLOCK_TEMPLATES } from '../data/blocks';
+import { useApp, WorkspaceBlock } from '../context/AppContext';
+import CodeBlock from './CodeBlock';
 
 interface Props {
   category: BlockCategory;
@@ -13,9 +14,11 @@ interface Props {
 export default function CategoryBand({ category, blocks, isExpanded, onToggle }: Props) {
   const { setWorkspaceBlocks, workspaceBlocks, setLibraryOpen } = useApp();
   const color = CATEGORY_COLORS[category];
+  const dark = CATEGORY_DARK[category];
+  const useDarkText = category === 'Eventos';
 
   const handleBlockPress = (block: BlockDef) => {
-    const newBlock = {
+    const newBlock: WorkspaceBlock = {
       id: `ws_${Date.now()}_${block.id}`,
       defId: block.id,
       label: block.label,
@@ -33,24 +36,34 @@ export default function CategoryBand({ category, blocks, isExpanded, onToggle }:
         onPress={onToggle}
         activeOpacity={0.85}
       >
-        <Text style={styles.categoryName}>{category.toUpperCase()}</Text>
-        <Text style={styles.chevron}>{isExpanded ? '▲' : '▼'}</Text>
+        <Text style={[styles.categoryName, useDarkText && { color: '#1A1A2E' }]}>
+          {category.toUpperCase()}
+        </Text>
+        <Text style={[styles.chevron, useDarkText && { color: 'rgba(0,0,0,0.4)' }]}>
+          {isExpanded ? '▲' : '▼'}
+        </Text>
       </TouchableOpacity>
 
       {isExpanded && (
-        <View style={[styles.blocksContainer, { backgroundColor: color + '22' }]}>
-          {blocks.map((block) => (
-            <TouchableOpacity
-              key={block.id}
-              style={[styles.blockRow, { borderLeftColor: color }]}
-              onPress={() => handleBlockPress(block)}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.blockChip, { backgroundColor: color }]}>
-                <Text style={styles.blockChipText}>{block.label}</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
+        <View style={[styles.blocksContainer, { borderLeftColor: color, backgroundColor: dark + '22' }]}>
+          {blocks.map((block) => {
+            const previewBlock: WorkspaceBlock = {
+              id: block.id,
+              defId: block.id,
+              label: block.label,
+              category: block.category,
+              color: CATEGORY_COLORS[block.category as BlockCategory],
+            };
+            return (
+              <TouchableOpacity
+                key={block.id}
+                onPress={() => handleBlockPress(block)}
+                activeOpacity={0.75}
+              >
+                <CodeBlock block={previewBlock} preview isFirst isLast />
+              </TouchableOpacity>
+            );
+          })}
         </View>
       )}
     </View>
@@ -77,23 +90,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   blocksContainer: {
-    paddingVertical: 12,
+    paddingVertical: 16,
     paddingHorizontal: 20,
-    gap: 10,
-  },
-  blockRow: {
+    gap: 12,
     borderLeftWidth: 4,
-    paddingLeft: 12,
-  },
-  blockChip: {
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    alignSelf: 'flex-start',
-  },
-  blockChipText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700',
   },
 });

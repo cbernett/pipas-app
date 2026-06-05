@@ -19,7 +19,10 @@ export default function AppHeader() {
 
         {/* Logo centered */}
         <View style={styles.logoContainer}>
-          <Text style={styles.logo}>PIPAS</Text>
+          <View style={styles.logoBadge}>
+            <View style={styles.logoIconDot} />
+            <Text style={styles.logo}>pipas</Text>
+          </View>
         </View>
 
         {/* Run button - right side */}
@@ -76,11 +79,26 @@ const styles = StyleSheet.create({
     flex: 2,
     alignItems: 'center',
   },
+  logoBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    backgroundColor: '#F0EEFF',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  logoIconDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#6B4FBB',
+  },
   logo: {
-    fontSize: 22,
-    fontWeight: '900',
+    fontSize: 18,
+    fontWeight: '800',
     color: '#6B4FBB',
-    letterSpacing: 4,
+    letterSpacing: 1.5,
   },
   tabs: {
     flexDirection: 'row',

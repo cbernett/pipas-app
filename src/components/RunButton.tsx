@@ -14,14 +14,14 @@ const EXAMPLE_PROGRAM = [
 ];
 
 export default function RunButton() {
-  const { isRunning, startRun, stopRun, workspaceBlocks } = useApp();
+  const { isRunning, armProgram, stopRun, workspaceBlocks } = useApp();
 
   const handlePress = () => {
     if (isRunning) {
       stopRun();
     } else {
       const blocks = workspaceBlocks.length > 0 ? workspaceBlocks : EXAMPLE_PROGRAM;
-      startRun(blocks);
+      armProgram(blocks);
     }
   };
 

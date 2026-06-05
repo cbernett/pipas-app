@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
-import { Modal, View, Text, TouchableOpacity, StyleSheet, Pressable, Alert } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { Modal, View, Text, TouchableOpacity, StyleSheet, Pressable, Alert, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, BoardStatus } from '../context/AppContext';
 import { board } from '../serial';
+
+const MAX_LOG = 30;
 
 export default function BoardStatusSheet() {
   const {
@@ -14,6 +16,21 @@ export default function BoardStatusSheet() {
   } = useApp();
   const insets = useSafeAreaInsets();
   const [connecting, setConnecting] = useState(false);
+  const [serialLog, setSerialLog] = useState<string[]>([]);
+  const logScrollRef = useRef<ScrollView>(null);
+
+  // Subscribe to raw serial lines while the sheet is open
+  useEffect(() => {
+    const unsub = board.onRawLine((line) => {
+      setSerialLog(prev => {
+        const next = [...prev, line];
+        return next.length > MAX_LOG ? next.slice(-MAX_LOG) : next;
+      });
+      // Scroll to bottom
+      setTimeout(() => logScrollRef.current?.scrollToEnd({ animated: true }), 50);
+    });
+    return unsub;
+  }, []);
 
   const handleConnectUSB = async () => {
     if (!board.isSupported) {
@@ -130,6 +147,40 @@ export default function BoardStatusSheet() {
             </View>
           </View>
 
+          {/* ── Serial monitor ─────────────────────────────── */}
+          <View style={styles.monitorSection}>
+            <View style={styles.monitorHeader}>
+              <Text style={styles.monitorTitle}>MONITOR SERIAL</Text>
+              <TouchableOpacity onPress={() => setSerialLog([])}>
+                <Text style={styles.monitorClear}>limpar</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView
+              ref={logScrollRef}
+              style={styles.monitorScroll}
+              contentContainerStyle={{ padding: 8 }}
+            >
+              {serialLog.length === 0 ? (
+                <Text style={styles.monitorEmpty}>
+                  {boardStatus === 'connected'
+                    ? 'Aguardando dados da placa…'
+                    : 'Conecte a placa para ver os dados aqui'}
+                </Text>
+              ) : (
+                serialLog.map((line, i) => (
+                  <Text key={i} style={styles.monitorLine}>
+                    {`> ${line}`}
+                  </Text>
+                ))
+              )}
+            </ScrollView>
+            {boardStatus === 'connected' && serialLog.length > 0 && (
+              <Text style={styles.monitorHint}>
+                Se toque na placa não aciona nada, compartilhe o que aparece aqui
+              </Text>
+            )}
+          </View>
+
           {/* Status switcher for board state */}
           <View style={styles.devRow}>
             <Text style={styles.devLabel}>Estado: </Text>
@@ -209,6 +260,22 @@ const styles = StyleSheet.create({
     paddingVertical: 14, alignItems: 'center',
   },
   simBtnText: { color: '#6B4FBB', fontSize: 14, fontWeight: '700' },
+
+  // Serial monitor
+  monitorSection: { alignSelf: 'stretch', marginBottom: 16 },
+  monitorHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6,
+  },
+  monitorTitle: { fontSize: 11, fontWeight: '700', color: '#AAA', letterSpacing: 1 },
+  monitorClear: { fontSize: 11, color: '#6B4FBB', fontWeight: '600' },
+  monitorScroll: {
+    backgroundColor: '#1A1F2E', borderRadius: 10, height: 100,
+  },
+  monitorEmpty: { color: 'rgba(255,255,255,0.3)', fontSize: 12, fontStyle: 'italic' },
+  monitorLine: { color: '#22C55E', fontSize: 12, fontFamily: 'monospace', lineHeight: 18 },
+  monitorHint: {
+    fontSize: 11, color: '#999', textAlign: 'center', marginTop: 6, fontStyle: 'italic',
+  },
 
   // Dev status switcher
   devRow: {

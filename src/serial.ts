@@ -1,47 +1,61 @@
 /**
  * Web Serial API wrapper for the Pipas Board.
  *
- * Expected protocol (Arduino Serial.println):
- *   "TOUCH 1\n"  — touch pad 1 triggered
- *   "TOUCH 2\n"  — touch pad 2 triggered
- *   "TOUCH 3\n"  — touch pad 3 triggered
+ * Touch message format — the parser accepts any of these (case-insensitive):
+ *   "TOUCH 1", "T1", "TOQUE 1", "toque1", "1", "pad1", "cap1", "sensor1"
  *
- * Baud rate: 9600 (change BAUD below if your firmware uses a different rate)
+ * If none of the above match, the raw line is still emitted to rawLine
+ * listeners so you can see exactly what the board is sending.
+ *
+ * Baud rate defaults to 9600. Call board.setBaudRate(115200) before
+ * connect() if your firmware uses a different rate.
  */
 
-const BAUD = 9600;
-
-type TouchListener = (pad: number) => void;
+type TouchListener  = (pad: number) => void;
+type RawLineListener = (line: string) => void;
 
 class PipasBoardSerial {
-  private port: any = null;
+  private port: any   = null;
   private reader: any = null;
-  private listeners: TouchListener[] = [];
+  private touchListeners:   TouchListener[]   = [];
+  private rawListeners:     RawLineListener[] = [];
   private running = false;
+  private baud    = 9600;
 
   get isSupported() {
     return typeof navigator !== 'undefined' && 'serial' in navigator;
   }
 
-  get isConnected() {
-    return this.port !== null;
+  get isConnected() { return this.port !== null; }
+
+  setBaudRate(rate: number) { this.baud = rate; }
+
+  onTouch(fn: TouchListener): () => void {
+    this.touchListeners.push(fn);
+    return () => { this.touchListeners = this.touchListeners.filter(l => l !== fn); };
   }
 
-  onTouch(fn: TouchListener) {
-    this.listeners.push(fn);
-    return () => { this.listeners = this.listeners.filter(l => l !== fn); };
+  /** Subscribe to every raw line received — useful for debugging */
+  onRawLine(fn: RawLineListener): () => void {
+    this.rawListeners.push(fn);
+    return () => { this.rawListeners = this.rawListeners.filter(l => l !== fn); };
   }
 
-  private emit(pad: number) {
-    this.listeners.forEach(fn => fn(pad));
+  private emitTouch(pad: number) {
+    this.touchListeners.forEach(fn => fn(pad));
+  }
+
+  private emitRaw(line: string) {
+    this.rawListeners.forEach(fn => fn(line));
   }
 
   async connect(): Promise<void> {
-    if (!this.isSupported) throw new Error('Web Serial not supported in this browser. Use Chrome.');
-
+    if (!this.isSupported) {
+      throw new Error('Web Serial não suportado. Use o Google Chrome.');
+    }
     const nav = navigator as any;
     this.port = await nav.serial.requestPort();
-    await this.port.open({ baudRate: BAUD });
+    await this.port.open({ baudRate: this.baud });
     this.running = true;
     this.readLoop();
   }
@@ -49,8 +63,8 @@ class PipasBoardSerial {
   async disconnect(): Promise<void> {
     this.running = false;
     try { await this.reader?.cancel(); } catch (_) {}
-    try { await this.port?.close(); } catch (_) {}
-    this.port = null;
+    try { await this.port?.close(); }    catch (_) {}
+    this.port   = null;
     this.reader = null;
   }
 
@@ -68,11 +82,14 @@ class PipasBoardSerial {
           const lines = buffer.split('\n');
           buffer = lines.pop() ?? '';
           for (const line of lines) {
-            this.parseLine(line.trim());
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            this.emitRaw(trimmed);
+            this.parseLine(trimmed);
           }
         }
       } catch (_) {
-        // port closed or error — exit loop
+        // port closed or disconnected
       } finally {
         this.reader?.releaseLock();
         this.reader = null;
@@ -81,9 +98,19 @@ class PipasBoardSerial {
   }
 
   private parseLine(line: string) {
-    // Accept "TOUCH 1", "T1", "touch1", "TOQUE 1", etc.
-    const m = line.match(/(?:TOUCH|T|TOQUE)\s*(\d)/i);
-    if (m) this.emit(parseInt(m[1], 10));
+    const l = line.toLowerCase();
+
+    // Explicit touch keywords: "TOUCH 1", "T1", "TOQUE 1", "toque1", etc.
+    const keyword = l.match(/(?:touch|toque|pad|cap|sensor|t)\s*(\d)/);
+    if (keyword) { this.emitTouch(parseInt(keyword[1], 10)); return; }
+
+    // Bare digit: "1", "2", "3"
+    const bare = l.match(/^(\d)$/);
+    if (bare) { this.emitTouch(parseInt(bare[1], 10)); return; }
+
+    // "key:1" or "pin:1" style
+    const colon = l.match(/(?:key|pin|btn|button|touch|toque):\s*(\d)/);
+    if (colon) { this.emitTouch(parseInt(colon[1], 10)); }
   }
 }
 

@@ -1,28 +1,37 @@
 /**
  * Web Serial API wrapper for the Pipas Board.
  *
- * Touch message format — the parser accepts any of these (case-insensitive):
- *   "TOUCH 1", "T1", "TOQUE 1", "toque1", "1", "pad1", "cap1", "sensor1"
+ * Protocol (board → app):
+ *   Continuous stream of single ASCII bytes, no newlines:
+ *     '0' = no touch
+ *     '1' = pad 1 touched
+ *     '2' = pad 2 touched
+ *     '3' = pad 3 touched
  *
- * If none of the above match, the raw line is still emitted to rawLine
- * listeners so you can see exactly what the board is sending.
+ * Protocol (app → board):
+ *   Single byte: upper nibble = command type, lower nibble = value
+ *   e.g. LED on pad 1 = 0x11, motor = 0x21
  *
- * Baud rate defaults to 9600. Call board.setBaudRate(115200) before
- * connect() if your firmware uses a different rate.
+ * Baud rate: 9600
  */
 
 type TouchListener   = (pad: number) => void;
 type RawLineListener = (line: string) => void;
 
-export const COMMON_BAUD_RATES = [9600, 115200, 57600, 38400, 19200];
+export const COMMON_BAUD_RATES = [9600, 57600, 115200, 19200, 38400];
+
+const DEBOUNCE_MS = 350; // ignore same pad within this window
 
 class PipasBoardSerial {
   private port: any   = null;
   private reader: any = null;
-  private touchListeners:   TouchListener[]   = [];
-  private rawListeners:     RawLineListener[] = [];
-  private running = false;
-  private baud    = 9600;
+  private touchListeners:  TouchListener[]   = [];
+  private rawListeners:    RawLineListener[] = [];
+  private running  = false;
+  private baud     = 9600;
+
+  // Debounce: track last emit time per pad
+  private lastEmit: Record<number, number> = {};
 
   get isSupported() {
     return typeof navigator !== 'undefined' && 'serial' in navigator;
@@ -37,13 +46,15 @@ class PipasBoardSerial {
     return () => { this.touchListeners = this.touchListeners.filter(l => l !== fn); };
   }
 
-  /** Subscribe to every raw line received — useful for debugging */
   onRawLine(fn: RawLineListener): () => void {
     this.rawListeners.push(fn);
     return () => { this.rawListeners = this.rawListeners.filter(l => l !== fn); };
   }
 
   private emitTouch(pad: number) {
+    const now = Date.now();
+    if (now - (this.lastEmit[pad] ?? 0) < DEBOUNCE_MS) return;
+    this.lastEmit[pad] = now;
     this.touchListeners.forEach(fn => fn(pad));
   }
 
@@ -65,15 +76,15 @@ class PipasBoardSerial {
       flowControl: 'none',
     });
 
-    // Toggle DTR — some Arduinos need this to start streaming
+    // Toggle DTR to wake the board
     try {
       await this.port.setSignals({ dataTerminalReady: false, requestToSend: false });
       await new Promise(r => setTimeout(r, 100));
       await this.port.setSignals({ dataTerminalReady: true,  requestToSend: true  });
-    } catch (_) { /* port may not support signal control */ }
+    } catch (_) {}
 
     this.running = true;
-    this.emitRaw(`[conectado a ${this.baud} baud — aguardando dados…]`);
+    this.emitRaw(`[conectado a ${this.baud} baud — aguardando toque…]`);
     this.readLoop();
   }
 
@@ -86,9 +97,19 @@ class PipasBoardSerial {
     this.reader = null;
   }
 
+  /** Send a single-byte command to the board (e.g. LED on, motor on) */
+  async sendCommand(type: number, value: number): Promise<void> {
+    if (!this.port?.writable) return;
+    const writer = this.port.writable.getWriter();
+    try {
+      await writer.write(new Uint8Array([(type << 4) | (value & 0x0F)]));
+    } finally {
+      writer.releaseLock();
+    }
+  }
+
   private async readLoop() {
     const decoder = new TextDecoder();
-    let buffer = '';
 
     while (this.running && this.port?.readable) {
       this.reader = this.port.readable.getReader();
@@ -96,19 +117,16 @@ class PipasBoardSerial {
         while (true) {
           const { value, done } = await this.reader.read();
           if (done) break;
-          buffer += decoder.decode(value);
-          const lines = buffer.split('\n');
-          buffer = lines.pop() ?? '';
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed) continue;
-            this.emitRaw(trimmed);
-            this.parseLine(trimmed);
+
+          // Process byte-by-byte — protocol has no newlines
+          const text = decoder.decode(value);
+          for (const ch of text) {
+            this.parseByte(ch);
           }
         }
       } catch (err: any) {
         if (this.running) {
-          this.emitRaw(`[erro: ${err?.message ?? err}]`);
+          this.emitRaw(`[erro: ${err?.message ?? String(err)}]`);
         }
       } finally {
         this.reader?.releaseLock();
@@ -117,20 +135,13 @@ class PipasBoardSerial {
     }
   }
 
-  private parseLine(line: string) {
-    const l = line.toLowerCase();
+  private parseByte(ch: string) {
+    const n = parseInt(ch, 10);
+    if (isNaN(n) || n === 0) return; // '0' = no touch, skip
 
-    // Explicit touch keywords: "TOUCH 1", "T1", "TOQUE 1", "toque1", etc.
-    const keyword = l.match(/(?:touch|toque|pad|cap|sensor|t)\s*(\d)/);
-    if (keyword) { this.emitTouch(parseInt(keyword[1], 10)); return; }
-
-    // Bare digit: "1", "2", "3"
-    const bare = l.match(/^(\d)$/);
-    if (bare) { this.emitTouch(parseInt(bare[1], 10)); return; }
-
-    // "key:1" or "pin:1" style
-    const colon = l.match(/(?:key|pin|btn|button|touch|toque):\s*(\d)/);
-    if (colon) { this.emitTouch(parseInt(colon[1], 10)); }
+    // Emit to monitor only on touch (not the constant stream of '0')
+    this.emitRaw(`toque ${n}`);
+    this.emitTouch(n);
   }
 }
 

@@ -39,9 +39,9 @@ export const BLOCK_TEMPLATES: Record<string, BlockPartDef[]> = {
   mov_4: ['mude y em ', { type: 'number', value: '10' }],
   mov_5: ['vá para posição inicial'],
   // Luz
-  luz_1: ['quando toque ', { type: 'dropdown', value: '1', options: ['1', '2', '3'] }],
-  luz_2: ['quando toque ', { type: 'dropdown', value: '2', options: ['1', '2', '3'] }],
-  luz_3: ['quando toque ', { type: 'dropdown', value: '3', options: ['1', '2', '3'] }],
+  luz_1: ['quando eu receber ', { type: 'dropdown', value: 'toque 1', options: ['toque 1', 'toque 2', 'toque 3'] }],
+  luz_2: ['quando eu receber ', { type: 'dropdown', value: 'toque 2', options: ['toque 1', 'toque 2', 'toque 3'] }],
+  luz_3: ['quando eu receber ', { type: 'dropdown', value: 'toque 3', options: ['toque 1', 'toque 2', 'toque 3'] }],
   luz_4: ['ligue LED ', { type: 'dropdown', value: '1', options: ['1', '2', '3'] }],
   luz_5: ['desligue LED ', { type: 'dropdown', value: '1', options: ['1', '2', '3'] }],
   luz_6: ['pisque LED ', { type: 'dropdown', value: '1', options: ['1', '2', '3'] }],
@@ -61,9 +61,29 @@ export const BLOCK_TEMPLATES: Record<string, BlockPartDef[]> = {
   ctrl_3: ['sempre'],
   ctrl_4: ['se ', { type: 'dropdown', value: 'então', options: ['então', 'senão'] }],
   // Synthetic IDs used in example program
-  evt_touch: ['quando eu receber toque ', { type: 'dropdown', value: '1', options: ['1', '2', '3'] }],
+  evt_touch: ['quando eu receber ', { type: 'dropdown', value: 'toque 1', options: ['toque 1', 'toque 2', 'toque 3'] }],
   ctrl_1b: ['espere ', { type: 'number', value: '0.2' }, ' segundo'],
 };
+
+// WorkspaceBlock type (duplicated here to avoid circular import)
+export interface WorkspaceBlockData {
+  id: string; defId: string; label: string; category: string; color: string;
+  innerBlocks?: WorkspaceBlockData[];
+}
+
+/** Default program shown when the workspace is empty */
+export const EXAMPLE_PROGRAM: WorkspaceBlockData[] = [
+  { id: 'ex_1', defId: 'luz_1', category: 'Luz',     color: CATEGORY_COLORS['Luz'],     label: 'quando eu receber toque 1' },
+  { id: 'ex_2', defId: 'som_1', category: 'Som',     color: CATEGORY_COLORS['Som'],     label: 'toque som meow!' },
+  { id: 'ex_3', defId: 'ctrl_1', category: 'Controle', color: CATEGORY_COLORS['Controle'], label: 'espere 1 segundo' },
+  {
+    id: 'ex_4', defId: 'ctrl_2', category: 'Controle', color: CATEGORY_COLORS['Controle'], label: 'repita 3 vezes',
+    innerBlocks: [
+      { id: 'ex_5', defId: 'luz_4',  category: 'Luz',      color: CATEGORY_COLORS['Luz'],      label: 'ligue LED 3' },
+      { id: 'ex_6', defId: 'ctrl_1b', category: 'Controle', color: CATEGORY_COLORS['Controle'], label: 'espere 0.2 segundo' },
+    ],
+  },
+];
 
 export const BLOCKS: BlockDef[] = [
   { id: 'mov_1', label: 'mova passos', category: 'Movimento' },

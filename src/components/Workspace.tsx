@@ -4,33 +4,10 @@ import {
 } from 'react-native';
 import { useApp, WorkspaceBlock } from '../context/AppContext';
 import CodeBlock from './CodeBlock';
-import { CATEGORY_COLORS } from '../data/blocks';
+import { EXAMPLE_PROGRAM } from '../data/blocks';
 
 const DOTS_SPACING = 24;
 const TRASH_ZONE_H = 72;
-
-const EXAMPLE_PROGRAM: WorkspaceBlock[] = [
-  {
-    id: 'ex_1', defId: 'evt_touch', category: 'Eventos',
-    label: 'quando eu receber toque 1', color: CATEGORY_COLORS['Eventos'],
-  },
-  {
-    id: 'ex_2', defId: 'som_1', category: 'Som',
-    label: 'toque som meow!', color: CATEGORY_COLORS['Som'],
-  },
-  {
-    id: 'ex_3', defId: 'ctrl_1', category: 'Controle',
-    label: 'espere 1 segundo', color: CATEGORY_COLORS['Controle'],
-  },
-  {
-    id: 'ex_4', defId: 'ctrl_2', category: 'Controle',
-    label: 'repita 3 vezes', color: CATEGORY_COLORS['Controle'],
-    innerBlocks: [
-      { id: 'ex_5', defId: 'luz_4', category: 'Luz', label: 'ligue LED 3', color: CATEGORY_COLORS['Luz'] },
-      { id: 'ex_6', defId: 'ctrl_1b', category: 'Controle', label: 'espere 0.2 segundo', color: CATEGORY_COLORS['Controle'] },
-    ],
-  },
-];
 
 export default function Workspace() {
   const {

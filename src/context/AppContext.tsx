@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect, ReactNode } from 'react';
-import { BlockDef } from '../data/blocks';
+import { BlockDef, EXAMPLE_PROGRAM } from '../data/blocks';
 import { playSound } from '../audio';
 import { board } from '../serial';
 
@@ -141,16 +141,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => { executeScriptRef.current = executeScript; }, [executeScript]);
 
   // Handle touch pad event from board or simulation
+  // Works whether or not the program is "armed" — board touch always triggers
   const handleTouchPad = useCallback((pad: number) => {
-    if (isExecutingRef.current) return; // already executing — ignore
-    if (!isRunningRef.current) return;  // not armed — ignore
+    if (isExecutingRef.current) return; // already mid-execution — ignore
 
-    // Find matching event block
-    const blocks = workspaceBlocksRef.current;
-    const startIdx = blocks.findIndex(b =>
-      b.category === 'Eventos' && b.label.toLowerCase().includes(`toque ${pad}`)
-    );
+    // Use workspace blocks if any, otherwise fall back to the example program
+    const blocks = workspaceBlocksRef.current.length > 0
+      ? workspaceBlocksRef.current
+      : EXAMPLE_PROGRAM as WorkspaceBlock[];
+    if (!blocks.length) return;
+
+    // Match touch event block for this pad:
+    //   luz_1/luz_2/luz_3 = library touch blocks (pad 1/2/3)
+    //   any label containing "toque {pad}" = example program or renamed blocks
+    const startIdx = blocks.findIndex(b => {
+      if (b.defId === `luz_${pad}`) return true;
+      if (b.label.toLowerCase().includes(`toque ${pad}`)) return true;
+      return false;
+    });
+
     const script = startIdx >= 0 ? blocks.slice(startIdx) : blocks;
+
+    // Auto-arm if not already running so the board can trigger without pressing ▶
+    if (!isRunningRef.current) {
+      runAbortRef.current = false;
+      isRunningRef.current = true;
+      setIsRunning(true);
+    }
     executeScriptRef.current(script);
   }, []);
 

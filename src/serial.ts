@@ -32,6 +32,8 @@ class PipasBoardSerial {
 
   // Debounce: track last emit time per pad
   private lastEmit: Record<number, number> = {};
+  // State tracking: only fire on change (avoids repeated triggers from same byte)
+  private prevRaw = -1;
 
   get isSupported() {
     return typeof navigator !== 'undefined' && 'serial' in navigator;
@@ -137,11 +139,17 @@ class PipasBoardSerial {
 
   private parseByte(ch: string) {
     const n = parseInt(ch, 10);
-    if (isNaN(n) || n === 0) return; // '0' = no touch, skip
+    if (isNaN(n)) return;
 
-    // Emit to monitor only on touch (not the constant stream of '0')
-    this.emitRaw(`toque ${n}`);
-    this.emitTouch(n);
+    // Only process state changes — ignore repeated identical bytes
+    if (n === this.prevRaw) return;
+    this.prevRaw = n;
+
+    // Firmware is 0-indexed: '0' = pad 1, '1' = pad 2, '2' = pad 3
+    // Convert to 1-indexed for the app
+    const pad = n + 1; // 1, 2, 3
+    this.emitRaw(`toque ${pad}`);
+    this.emitTouch(pad);
   }
 }
 

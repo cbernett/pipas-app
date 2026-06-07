@@ -81,19 +81,13 @@ export interface BlockStack {
 export const EXAMPLE_STACKS: BlockStack[] = [
   {
     id: 'example_stack',
-    x: 24,
-    y: 24,
+    x: 32,
+    y: 32,
     blocks: [
-      { id: 'ex_1', defId: 'evt_touch_1', category: 'Eventos', color: CATEGORY_COLORS['Eventos'], label: 'quando eu receber toque 1' },
-      { id: 'ex_2', defId: 'som_1',       category: 'Som',     color: CATEGORY_COLORS['Som'],     label: 'toque som meow!' },
+      { id: 'ex_1', defId: 'evt_touch_1', category: 'Eventos',  color: CATEGORY_COLORS['Eventos'],  label: 'quando eu receber toque 1' },
+      { id: 'ex_2', defId: 'som_1',       category: 'Som',      color: CATEGORY_COLORS['Som'],      label: 'toque som meow!' },
       { id: 'ex_3', defId: 'ctrl_1',      category: 'Controle', color: CATEGORY_COLORS['Controle'], label: 'espere 1 segundo' },
-      {
-        id: 'ex_4', defId: 'ctrl_2', category: 'Controle', color: CATEGORY_COLORS['Controle'], label: 'repita 3 vezes',
-        innerBlocks: [
-          { id: 'ex_5', defId: 'luz_4',   category: 'Luz',      color: CATEGORY_COLORS['Luz'],      label: 'ligue LED 3' },
-          { id: 'ex_6', defId: 'ctrl_1b', category: 'Controle', color: CATEGORY_COLORS['Controle'], label: 'espere 0.2 segundo' },
-        ],
-      },
+      { id: 'ex_4', defId: 'luz_4',       category: 'Luz',      color: CATEGORY_COLORS['Luz'],      label: 'ligue LED 1' },
     ],
   },
 ];

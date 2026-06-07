@@ -6,11 +6,10 @@ import { WorkspaceBlock } from '../context/AppContext';
 import { BLOCK_TEMPLATES, CATEGORY_DARK, BlockParamDef } from '../data/blocks';
 
 export const TAB_W      = 36;   // connector width
-export const TAB_H      = 11;   // connector height
-export const TAB_OFFSET = 18;   // horizontal offset from block left edge
-const BLOCK_R           = 12;   // body corner radius
-const CIRCLE_D          = 44;   // event-block circle diameter
-const WS_BG             = '#1A1F2E';
+export const TAB_H      = 12;   // connector height
+export const TAB_OFFSET = 20;   // horizontal offset from block left edge
+const BLOCK_R           = 18;   // body corner radius — pill-like
+const CIRCLE_D          = 50;   // event-block circle diameter
 
 const BRACKET_DEFIDS = ['ctrl_2', 'ctrl_3', 'ctrl_4'];
 
@@ -38,7 +37,7 @@ export default function CodeBlock(props: Props) {
 
 // ─── Event block — OctoStudio "key" shape ─────────────────────────────────
 
-function EventBlock({ block, isLast, preview, isDragging, isActive, onEventTap, onBlockTap, parts }: Props & { parts: any[] }) {
+function EventBlock({ block, preview, isDragging, isActive, onEventTap, onBlockTap, parts }: Props & { parts: any[] }) {
   const body = (
     <View style={[
       styles.eventBody, { backgroundColor: block.color },
@@ -67,8 +66,8 @@ function EventBlock({ block, isLast, preview, isDragging, isActive, onEventTap, 
         ) : body}
       </View>
 
-      {/* Bottom connector tab */}
-      {!isLast && !preview && (
+      {/* Bottom connector tab — always visible so blocks can always connect below */}
+      {!preview && (
         <View style={styles.tabRow}>
           <View style={[styles.tab, { backgroundColor: block.color }]} />
         </View>
@@ -79,18 +78,23 @@ function EventBlock({ block, isLast, preview, isDragging, isActive, onEventTap, 
 
 // ─── Stack block ──────────────────────────────────────────────────────────
 
-function StackBlock({ block, isLast, preview, isDragging, isActive, onEventTap, onBlockTap, parts }: Props & { parts: any[] }) {
+function StackBlock({ block, preview, isDragging, isActive, onEventTap, onBlockTap, parts }: Props & { parts: any[] }) {
+  const darkColor = CATEGORY_DARK[block.category as keyof typeof CATEGORY_DARK] ?? '#000';
   const body = (
     <View style={[
       styles.body, { backgroundColor: block.color },
       isDragging && styles.bodyDragging,
       isActive   && styles.bodyActive,
     ]}>
-      {/* Inset indent — always present on non-event blocks; the tab from above covers it */}
+      {/* Inset indent slot */}
       {!preview && (
-        <View style={styles.insetIndent} />
+        <View style={[styles.insetIndent, { backgroundColor: darkColor }]} />
       )}
       <BlockLabel parts={parts} />
+      {/* Subtle bottom separator — visible as a thin line between connected blocks */}
+      {!preview && (
+        <View style={styles.separator} />
+      )}
     </View>
   );
 
@@ -102,7 +106,8 @@ function StackBlock({ block, isLast, preview, isDragging, isActive, onEventTap, 
         </TouchableOpacity>
       ) : body}
 
-      {!isLast && !preview && (
+      {/* Bottom tab — always shown so blocks can always receive a connection below */}
+      {!preview && (
         <View style={styles.tabRow}>
           <View style={[styles.tab, { backgroundColor: block.color }]} />
         </View>
@@ -113,12 +118,12 @@ function StackBlock({ block, isLast, preview, isDragging, isActive, onEventTap, 
 
 // ─── Bracket / C-block ────────────────────────────────────────────────────
 
-function BracketBlock({ block, isLast, preview, isActive, parts }: Props & { parts: any[] }) {
+function BracketBlock({ block, preview, isActive, parts }: Props & { parts: any[] }) {
   const inner = block.innerBlocks ?? [];
   return (
     <View style={styles.wrapper}>
       <View style={[styles.bracketTop, { backgroundColor: block.color }, isActive && styles.bodyActive]}>
-        {!preview && <View style={styles.insetIndent} />}
+        {!preview && <View style={[styles.insetIndent, { backgroundColor: CATEGORY_DARK[block.category as keyof typeof CATEGORY_DARK] ?? '#000' }]} />}
         <BlockLabel parts={parts} />
       </View>
       <View style={styles.bracketBody}>
@@ -135,7 +140,7 @@ function BracketBlock({ block, isLast, preview, isActive, parts }: Props & { par
       <View style={[styles.bracketBottom, { backgroundColor: block.color }]}>
         <Text style={styles.returnArrow}>↩</Text>
       </View>
-      {!isLast && !preview && (
+      {!preview && (
         <View style={styles.tabRow}>
           <View style={[styles.tab, { backgroundColor: block.color }]} />
         </View>
@@ -189,11 +194,11 @@ const styles = StyleSheet.create({
   wrapper:      { alignSelf: 'flex-start' },
 
   // ── Inset indent — sits inside the body at top-left, covered by tab from above
+  // backgroundColor is set dynamically (CATEGORY_DARK of the block)
   insetIndent: {
     position: 'absolute',
     top: 0, left: TAB_OFFSET,
     width: TAB_W, height: TAB_H,
-    backgroundColor: WS_BG,
     borderBottomLeftRadius: 6, borderBottomRightRadius: 6,
   },
 
@@ -201,10 +206,9 @@ const styles = StyleSheet.create({
   body: {
     position: 'relative',
     flexDirection: 'row', alignItems: 'center',
-    // paddingTop includes space for the inset indent
-    paddingTop: TAB_H + 7,
-    paddingBottom: 9,
-    paddingHorizontal: 14,
+    paddingTop: TAB_H + 8,
+    paddingBottom: 10,
+    paddingHorizontal: 16,
     borderRadius: BLOCK_R,
     gap: 6,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
@@ -216,11 +220,21 @@ const styles = StyleSheet.create({
     shadowColor: '#FFF', shadowOpacity: 0.5, shadowRadius: 10,
   },
 
-  // ── Tab (male connector) — left-aligned
+  // ── Tab (male connector) — left-aligned, always rendered
   tabRow: { paddingLeft: TAB_OFFSET },
   tab: {
     width: TAB_W, height: TAB_H,
     borderBottomLeftRadius: 6, borderBottomRightRadius: 6,
+  },
+
+  // ── Subtle separator line at bottom of block body (shows between connected blocks)
+  separator: {
+    position: 'absolute',
+    bottom: 0, left: 0, right: 0,
+    height: 1.5,
+    backgroundColor: 'rgba(0,0,0,0.18)',
+    borderBottomLeftRadius: BLOCK_R,
+    borderBottomRightRadius: BLOCK_R,
   },
 
   // ── Event block (key shape) ───────────────────────────────────────────
@@ -231,20 +245,21 @@ const styles = StyleSheet.create({
     width: CIRCLE_D, height: CIRCLE_D,
     borderRadius: CIRCLE_D / 2,
     zIndex: 2,
+    // Sits above the body so they merge visually
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2, shadowRadius: 4, elevation: 4,
+    shadowOpacity: 0.25, shadowRadius: 5, elevation: 5,
   },
   eventBody: {
     position: 'relative',
     flexDirection: 'row', alignItems: 'center',
-    // Overlap circle so they merge seamlessly
-    marginLeft: -(CIRCLE_D * 0.32),
-    paddingLeft: CIRCLE_D * 0.32 + 10,
-    paddingRight: 14,
-    paddingVertical: 10,
+    // 50% overlap — circle center aligns with body left edge (OctoStudio exact)
+    marginLeft: -(CIRCLE_D / 2),
+    paddingLeft: CIRCLE_D / 2 + 10,
+    paddingRight: 16,
+    paddingVertical: 11,
     minHeight: CIRCLE_D,
     borderTopRightRadius: BLOCK_R, borderBottomRightRadius: BLOCK_R,
-    borderTopLeftRadius: 6, borderBottomLeftRadius: 6,
+    borderTopLeftRadius: BLOCK_R / 2, borderBottomLeftRadius: BLOCK_R / 2,
     zIndex: 1, gap: 6,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.18, shadowRadius: 4, elevation: 3,

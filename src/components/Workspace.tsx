@@ -1,5 +1,5 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
-import { View, ScrollView, Text, StyleSheet, Animated } from 'react-native';
+import { View, ScrollView, Text, StyleSheet, Animated, TouchableOpacity } from 'react-native';
 import { useApp, WorkspaceBlock, BlockStack } from '../context/AppContext';
 import CodeBlock, { TAB_H, TAB_OFFSET } from './CodeBlock';
 import { EXAMPLE_STACKS } from '../data/blocks';
@@ -292,6 +292,13 @@ export default function Workspace() {
         </View>
       )}
 
+      {/* Clear workspace button — resets to example */}
+      {stacks.length > 0 && (
+        <TouchableOpacity style={styles.clearBtn} onPress={() => setStacks([])}>
+          <Text style={styles.clearBtnText}>↺</Text>
+        </TouchableOpacity>
+      )}
+
       <ScrollView
         horizontal
         style={{ flex: 1 }}
@@ -418,4 +425,12 @@ const styles = StyleSheet.create({
   },
   listeningDot:  { width: 8, height: 8, borderRadius: 4, backgroundColor: '#22C55E' },
   listeningText: { color: '#22C55E', fontSize: 12, fontWeight: '600' },
+
+  clearBtn: {
+    position: 'absolute', bottom: 16, right: 16, zIndex: 20,
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  clearBtnText: { color: 'rgba(255,255,255,0.5)', fontSize: 18 },
 });

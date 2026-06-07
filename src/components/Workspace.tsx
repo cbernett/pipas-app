@@ -2,7 +2,7 @@ import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { View, ScrollView, Text, StyleSheet, Animated, TouchableOpacity } from 'react-native';
 import { useApp, WorkspaceBlock, BlockStack } from '../context/AppContext';
 import CodeBlock, { TAB_H, TAB_OFFSET } from './CodeBlock';
-import { EXAMPLE_STACKS } from '../data/blocks';
+
 
 const CANVAS_W   = 2200;
 const CANVAS_H   = 1800;
@@ -17,7 +17,7 @@ function isTouchEvent(b: WorkspaceBlock) {
 
 export default function Workspace() {
   const { stacks, setStacks, activeBlockId, usbDisconnectedWhileRunning, tapBlock, triggerScript } = useApp();
-  const displayStacks = stacks.length > 0 ? stacks : EXAMPLE_STACKS;
+  const displayStacks = stacks;
 
   // ── Drag/snap state ─────────────────────────────────────────────────────
   const [draggingId,    setDraggingId]    = useState<string | null>(null);
@@ -370,6 +370,15 @@ export default function Workspace() {
         >
           <View ref={canvasRef} nativeID="workspace-canvas" style={styles.canvas}>
 
+            {/* Cold-state hint */}
+            {stacks.length === 0 && (
+              <View style={styles.emptyHint} pointerEvents="none">
+                <Text style={styles.emptyHintText}>
+                  Arrasta blocos da biblioteca para começar.
+                </Text>
+              </View>
+            )}
+
             {/* Snap preview ghost */}
             {snapPreviewPos && draggingStack && (
               <View style={[styles.snapGhost, { left: snapPreviewPos.x, top: snapPreviewPos.y }]}>
@@ -462,6 +471,19 @@ const styles = StyleSheet.create({
   },
   listeningDot:  { width: 8, height: 8, borderRadius: 4, backgroundColor: '#22C55E' },
   listeningText: { color: '#22C55E', fontSize: 12, fontWeight: '600' },
+
+  emptyHint: {
+    position: 'absolute',
+    top: '40%',
+    left: 0, right: 0,
+    alignItems: 'center',
+  },
+  emptyHintText: {
+    color: 'rgba(255,255,255,0.15)',
+    fontSize: 18,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
 
   clearBtn: {
     position: 'absolute', bottom: 16, right: 16, zIndex: 20,

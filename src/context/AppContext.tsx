@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect, ReactNode } from 'react';
-import { BlockDef, BlockStack, WorkspaceBlock, EXAMPLE_STACKS } from '../data/blocks';
+import { BlockDef, BlockStack, WorkspaceBlock } from '../data/blocks';
 import { playSound } from '../audio';
 import { board } from '../serial';
 
@@ -132,9 +132,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const handleTouchPad = useCallback((pad: number) => {
     if (isExecutingRef.current) return;
     const activStacks = stacksRef.current;
-    const script = findTouchStack(activStacks, pad)
-      ?? findTouchStack(EXAMPLE_STACKS, pad)
-      ?? null;
+    const script = findTouchStack(activStacks, pad) ?? null;
     if (!script) return;
     runAbortRef.current = false;
     execRef.current(script);

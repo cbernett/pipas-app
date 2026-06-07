@@ -98,7 +98,7 @@ function LibraryBlockItem({ block, addStack }: { block: BlockDef; addStack: (b: 
 
   return (
     <View ref={ref} style={styles.blockItem}>
-      <CodeBlock block={wsBlock} preview isFirst isLast />
+      <CodeBlock block={wsBlock} isFirst isLast />
     </View>
   );
 }

@@ -62,24 +62,36 @@ export default function Workspace() {
     };
   }, [canvasTopLeft]);
 
-  // ── Snap detection ──────────────────────────────────────────────────────
-  const findSnap = useCallback((dragStack: BlockStack, dragX: number, dragY: number): { id: string; y: number } | null => {
-    // Dragged stack's TOP connector position
+  // ── Accumulated block height helper ────────────────────────────────────
+  const accumHeight = useCallback((stackId: string, blockIdx: number): number => {
+    const heights = blockHeightsRef.current[stackId] ?? [];
+    let acc = 0;
+    for (let i = 0; i < blockIdx; i++) {
+      acc += i === 0 ? (heights[i] ?? 58) : ((heights[i] ?? 58) - TAB_H);
+    }
+    return acc;
+  }, []);
+
+  // ── Snap detection — checks every inter-block boundary, not just bottom ──
+  const findSnap = useCallback((dragStack: BlockStack, dragX: number, dragY: number): { id: string; y: number; insertAt: number } | null => {
     const emX = dragX + TAB_OFFSET + 8;
     const emY = dragY;
 
     for (const s of localStacksRef.current) {
       if (s.id === dragStack.id) continue;
-      // Target stack's BOTTOM connector position
-      const h = stackHeightsRef.current[s.id] ?? 200;
       const recX = s.x + TAB_OFFSET + 8;
-      const recY = s.y + h;
-      if (Math.abs(emX - recX) < SNAP_D && Math.abs(emY - recY) < SNAP_D) {
-        return { id: s.id, y: recY };
+      if (Math.abs(emX - recX) >= SNAP_D) continue;
+
+      // Check each boundary: between block i-1 and i, and at the very bottom
+      for (let i = 1; i <= s.blocks.length; i++) {
+        const boundY = s.y + accumHeight(s.id, i);
+        if (Math.abs(emY - boundY) < SNAP_D) {
+          return { id: s.id, y: boundY, insertAt: i };
+        }
       }
     }
     return null;
-  }, []);
+  }, [accumHeight]);
 
   // ── Bracket inner slot snap ─────────────────────────────────────────────
   const findBracketSnap = useCallback((dragStack: BlockStack, dragX: number, dragY: number):
@@ -251,13 +263,15 @@ export default function Workspace() {
         let next: BlockStack[];
 
         if (snap) {
-          // Merge onto snap target (end-to-end)
+          // Splice dragged blocks into target stack at the snapped boundary
           next = stks
             .filter((s: BlockStack) => s.id !== dsId)
-            .map((s: BlockStack) => s.id === snap.id
-              ? { ...s, blocks: [...s.blocks, ...dragStk.blocks] }
-              : s
-            );
+            .map((s: BlockStack) => {
+              if (s.id !== snap.id) return s;
+              const merged = [...s.blocks];
+              merged.splice(snap.insertAt, 0, ...dragStk.blocks);
+              return { ...s, blocks: merged };
+            });
         } else if (bracketSnap) {
           // Drop into bracket's inner slot
           next = stks
@@ -294,17 +308,7 @@ export default function Workspace() {
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup',   onUp);
     };
-  }, [stackAt, blockIdxAt, findSnap, findBracketSnap, setStacks, dragAnimX, dragAnimY]);
-
-  // Helper: accumulated height of blocks 0..blockIdx-1 in a stack
-  const accumHeight = (stackId: string, blockIdx: number): number => {
-    const heights = blockHeightsRef.current[stackId] ?? [];
-    let acc = 0;
-    for (let i = 0; i < blockIdx; i++) {
-      acc += i === 0 ? (heights[i] ?? 58) : ((heights[i] ?? 58) - TAB_H);
-    }
-    return acc;
-  };
+  }, [stackAt, blockIdxAt, accumHeight, findSnap, findBracketSnap, setStacks, dragAnimX, dragAnimY]);
 
   // ── Tap handlers ────────────────────────────────────────────────────────
   const handleEventTap = useCallback((block: WorkspaceBlock, stackBlocks: WorkspaceBlock[], bi: number) => {

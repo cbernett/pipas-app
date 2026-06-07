@@ -110,8 +110,6 @@ export const BLOCKS: BlockDef[] = [
   { id: 'som_2', label: 'pare todos os sons',       category: 'Som' },
   { id: 'som_3', label: 'grave som',                category: 'Som' },
   { id: 'evt_touch_1', label: 'quando eu receber toque 1', category: 'Eventos' },
-  { id: 'evt_touch_2', label: 'quando eu receber toque 2', category: 'Eventos' },
-  { id: 'evt_touch_3', label: 'quando eu receber toque 3', category: 'Eventos' },
   { id: 'evt_1', label: 'quando iniciar',            category: 'Eventos' },
   { id: 'evt_2', label: 'quando receber mensagem',   category: 'Eventos' },
   { id: 'evt_3', label: 'envie mensagem',            category: 'Eventos' },

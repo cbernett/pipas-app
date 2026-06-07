@@ -63,7 +63,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     paddingHorizontal: 12,
-    paddingTop: 16,
+    paddingTop: 28,
   },
 
   // Left — tabs flush to bottom
@@ -102,7 +102,6 @@ const styles = StyleSheet.create({
   logoImage: {
     width: 160,
     height: 52,
-    marginTop: 10,
     marginBottom: 4,
   },
 

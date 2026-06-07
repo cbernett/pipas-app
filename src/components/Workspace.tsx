@@ -393,12 +393,6 @@ export default function Workspace() {
           <Text style={styles.usbBannerText}>⚠️  Placa desconectada</Text>
         </View>
       )}
-      {activeBlockId === null && !usbDisconnectedWhileRunning && (
-        <View style={styles.listeningBadge} pointerEvents="none">
-          <View style={styles.listeningDot} />
-          <Text style={styles.listeningText}>toque na placa para iniciar</Text>
-        </View>
-      )}
 
       {/* Clear workspace button — resets to example */}
       {stacks.length > 0 && (
@@ -429,14 +423,12 @@ export default function Workspace() {
         >
           <View ref={canvasRef} nativeID="workspace-canvas" style={styles.canvas}>
 
-            {/* Cold-state hint */}
-            {stacks.length === 0 && (
-              <View style={styles.emptyHint} pointerEvents="none">
-                <Text style={styles.emptyHintText}>
-                  Arrasta blocos da biblioteca para começar.
-                </Text>
-              </View>
-            )}
+            {/* Guide message — always visible, top-left */}
+            <View style={styles.guideMessage} pointerEvents="none">
+              <Text style={styles.guideText}>
+                Para iniciar conecta a placa e arrasta blocos da biblioteca para criar o seu programa.
+              </Text>
+            </View>
 
             {/* Snap preview ghost — workspace drag or library drag */}
             {snapPreviewPos && (draggingStack ?? libDragBlock) && (
@@ -522,26 +514,17 @@ const styles = StyleSheet.create({
   },
   usbBanner: { backgroundColor: '#EF4444', paddingVertical: 12, paddingHorizontal: 20, zIndex: 20 },
   usbBannerText: { color: '#FFF', fontSize: 15, fontWeight: '700', textAlign: 'center' },
-  listeningBadge: {
-    position: 'absolute', top: 12, right: 16, zIndex: 15,
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: 'rgba(34,197,94,0.15)',
-    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6,
-  },
-  listeningDot:  { width: 8, height: 8, borderRadius: 4, backgroundColor: '#22C55E' },
-  listeningText: { color: '#22C55E', fontSize: 12, fontWeight: '600' },
-
-  emptyHint: {
+  guideMessage: {
     position: 'absolute',
-    top: '40%',
-    left: 0, right: 0,
-    alignItems: 'center',
+    top: 24,
+    left: 20,
+    width: 280,
   },
-  emptyHintText: {
-    color: 'rgba(255,255,255,0.15)',
-    fontSize: 18,
-    fontWeight: '600',
-    textAlign: 'center',
+  guideText: {
+    color: 'rgba(255,255,255,0.45)',
+    fontSize: 14,
+    fontWeight: '400',
+    lineHeight: 21,
   },
 
   clearBtn: {

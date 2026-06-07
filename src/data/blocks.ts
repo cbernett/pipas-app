@@ -96,16 +96,11 @@ export const EXAMPLE_STACKS: BlockStack[] = [
 export const EXAMPLE_PROGRAM = EXAMPLE_STACKS[0].blocks;
 
 export const BLOCKS: BlockDef[] = [
-  { id: 'mov_1', label: 'mova passos',            category: 'Movimento' },
-  { id: 'mov_2', label: 'gire graus',              category: 'Movimento' },
-  { id: 'mov_3', label: 'mude x em',               category: 'Movimento' },
-  { id: 'mov_4', label: 'mude y em',               category: 'Movimento' },
-  { id: 'mov_5', label: 'vá para posição inicial', category: 'Movimento' },
-  { id: 'luz_4', label: 'ligue LED',               category: 'Luz' },
+  { id: 'luz_7', label: 'ligue motor',              category: 'Movimento' },
+  { id: 'luz_8', label: 'desligue motor',           category: 'Movimento' },
+  { id: 'luz_4', label: 'ligue LED',                category: 'Luz' },
   { id: 'luz_5', label: 'desligue LED',             category: 'Luz' },
   { id: 'luz_6', label: 'pisque LED',               category: 'Luz' },
-  { id: 'luz_7', label: 'ligue motor',              category: 'Luz' },
-  { id: 'luz_8', label: 'desligue motor',           category: 'Luz' },
   { id: 'som_1', label: 'toque som',                category: 'Som' },
   { id: 'som_2', label: 'pare todos os sons',       category: 'Som' },
   { id: 'som_3', label: 'grave som',                category: 'Som' },

@@ -58,9 +58,26 @@ function flattenBlocks(blocks: WorkspaceBlock[]): WorkspaceBlock[] {
 
 async function executeBlock(block: WorkspaceBlock): Promise<void> {
   const label = block.label.toLowerCase();
-  if (label.includes('toque som')) {
+  const defId = block.defId;
+
+  if (label.includes('toque som') || defId === 'som_1') {
     const m = label.match(/toque som\s+(.+)/);
-    await playSound(m?.[1]?.trim() ?? 'menu').catch(() => {});
+    await playSound(m?.[1]?.trim() ?? 'meow!').catch(() => {});
+  } else if (defId === 'luz_4') {                         // ligue LED
+    const n = parseInt(label.match(/\d+/)?.[0] ?? '1');
+    await board.sendCommand(1, n).catch(() => {});
+  } else if (defId === 'luz_5') {                         // desligue LED
+    const n = parseInt(label.match(/\d+/)?.[0] ?? '1');
+    await board.sendCommand(0, n).catch(() => {});
+  } else if (defId === 'luz_6') {                         // pisque LED
+    const n = parseInt(label.match(/\d+/)?.[0] ?? '1');
+    await board.sendCommand(1, n).catch(() => {});
+    await new Promise(r => setTimeout(r, 300));
+    await board.sendCommand(0, n).catch(() => {});
+  } else if (defId === 'luz_7') {                         // ligue motor
+    await board.sendCommand(2, 1).catch(() => {});
+  } else if (defId === 'luz_8') {                         // desligue motor
+    await board.sendCommand(2, 0).catch(() => {});
   }
 }
 

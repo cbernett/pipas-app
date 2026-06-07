@@ -121,16 +121,16 @@ export default function CategoryBand({ category, blocks, isExpanded, onToggle }:
 
 const styles = StyleSheet.create({
   band: {
-    height: 82,
+    height: 56,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     justifyContent: 'space-between',
   },
   categoryName: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '900',
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 13,
+    fontWeight: '700',
     letterSpacing: 1.5,
   },
   chevron: {

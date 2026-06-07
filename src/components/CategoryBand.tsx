@@ -35,13 +35,12 @@ function LibraryBlockItem({ block, addStack }: { block: BlockDef; addStack: (b: 
       let hasMoved = false;
       let ghost: HTMLElement | null = null;
 
-      const dispatch = (name: string, extra: object) =>
-        document.dispatchEvent(new CustomEvent(name, { detail: extra }));
-
       const onMove = (ev: PointerEvent) => {
         const d = Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY);
         if (!hasMoved && d > DRAG_MIN) {
           hasMoved = true;
+          // Tell workspace a library drag is active
+          (window as any).__libDrag = { active: true, hasMoved: true, block: wsBlock };
           ghost = document.createElement('div');
           ghost.style.cssText = [
             'position:fixed',
@@ -64,23 +63,18 @@ function LibraryBlockItem({ block, addStack }: { block: BlockDef; addStack: (b: 
           ghost.style.left = `${ev.clientX - 60}px`;
           ghost.style.top  = `${ev.clientY - 22}px`;
         }
-        if (hasMoved) {
-          dispatch('pipas:libdrag:move', { clientX: ev.clientX, clientY: ev.clientY, block: wsBlock });
-        }
       };
 
-      const onUp = (ev: PointerEvent) => {
+      const onUp = (_ev: PointerEvent) => {
         document.removeEventListener('pointermove', onMove);
         document.removeEventListener('pointerup', onUp);
         if (ghost) { document.body.removeChild(ghost); ghost = null; }
 
-        if (hasMoved) {
-          // Workspace handles the snap-merge or plain add via event
-          dispatch('pipas:libdrag:drop', { clientX: ev.clientX, clientY: ev.clientY, block: wsBlock });
-        } else {
-          // Tap — add at a visible default position
+        if (!hasMoved) {
+          // Tap — workspace's onUp won't fire for this (no __libDrag set), add directly
           addStack(wsBlock, 40 + Math.random() * 80, 40 + Math.random() * 80);
         }
+        // If hasMoved: workspace's onUp reads __libDrag and handles the drop + clears it
       };
 
       document.addEventListener('pointermove', onMove);

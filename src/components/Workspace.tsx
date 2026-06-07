@@ -163,6 +163,10 @@ export default function Workspace() {
     if (typeof document === 'undefined') return;
 
     const onDown = (e: PointerEvent) => {
+      // Clear any stale library drag state
+      (window as any).__libDrag = null;
+      setLibDragBlock(null);
+
       const hit = stackAt(e.clientX, e.clientY);
       if (!hit) return;
       const { stack, relY } = hit;
@@ -178,6 +182,20 @@ export default function Workspace() {
     };
 
     const onMove = (e: PointerEvent) => {
+      // ── Library drag hover ────────────────────────────────────────────
+      const ld = (window as any).__libDrag;
+      if (ld?.active && ld?.hasMoved) {
+        const pos = toCanvas(e.clientX, e.clientY);
+        const tempStack: BlockStack = { id: '__lib__', x: pos.x, y: pos.y, blocks: [ld.block] };
+        const snap = findSnap(tempStack, pos.x, pos.y);
+        setLibDragBlock(ld.block);
+        setSnapTargetId(snap?.id ?? null);
+        setSnapPreviewPos(snap
+          ? { x: localStacksRef.current.find(s => s.id === snap.id)?.x ?? pos.x, y: snap.y }
+          : null);
+        return;
+      }
+
       if (!pendingDrag.current) return;
       const { stackId, blockIdx, startMouse, startPos } = pendingDrag.current;
       const dx = e.clientX - startMouse.x;
@@ -240,6 +258,43 @@ export default function Workspace() {
     };
 
     const onUp = (e: PointerEvent) => {
+      // ── Library drag drop ─────────────────────────────────────────────
+      const ld = (window as any).__libDrag;
+      if (ld?.active && ld?.hasMoved) {
+        (window as any).__libDrag = null;
+        const pos  = toCanvas(e.clientX, e.clientY);
+        const tempStack: BlockStack = { id: '__lib__', x: pos.x, y: pos.y, blocks: [ld.block] };
+        const snap        = findSnap(tempStack, pos.x, pos.y);
+        const bracketSnap = !snap ? findBracketSnap(tempStack, pos.x, pos.y) : null;
+        const wsBlock: WorkspaceBlock = { ...ld.block, id: `ws_${Date.now()}_${ld.block.id}` };
+        const stks = localStacksRef.current;
+
+        if (snap) {
+          const next = stks.map((s: BlockStack) => {
+            if (s.id !== snap.id) return s;
+            const merged = [...s.blocks];
+            merged.splice(snap.insertAt, 0, wsBlock);
+            return { ...s, blocks: merged };
+          });
+          localStacksRef.current = next;
+          setStacks(next);
+        } else if (bracketSnap) {
+          const next = stks.map((s: BlockStack) => s.id === bracketSnap.stackId
+            ? { ...s, blocks: s.blocks.map(b => b.id === bracketSnap.bracketBlockId
+                ? { ...b, innerBlocks: [...(b.innerBlocks ?? []), wsBlock] } : b) }
+            : s);
+          localStacksRef.current = next;
+          setStacks(next);
+        } else {
+          addStackRef.current(wsBlock, Math.max(10, pos.x - 60), Math.max(10, pos.y - 30));
+        }
+
+        setLibDragBlock(null);
+        setSnapTargetId(null);
+        setSnapPreviewPos(null);
+        return;
+      }
+
       const pd = pendingDrag.current;
       pendingDrag.current = null;
 
@@ -304,72 +359,13 @@ export default function Workspace() {
       hasMovedRef.current = false;
     };
 
-    // ── Library drag integration ─────────────────────────────────────────
-    const onLibMove = (e: Event) => {
-      const { clientX, clientY, block } = (e as CustomEvent).detail as { clientX: number; clientY: number; block: WorkspaceBlock };
-      const pos = toCanvas(clientX, clientY);
-      const tempStack: BlockStack = { id: '__lib__', x: pos.x, y: pos.y, blocks: [block] };
-      const snap = findSnap(tempStack, pos.x, pos.y);
-      setLibDragBlock(block);
-      setSnapTargetId(snap?.id ?? null);
-      setSnapPreviewPos(snap
-        ? { x: localStacksRef.current.find(s => s.id === snap.id)?.x ?? pos.x, y: snap.y }
-        : null);
-    };
-
-    const onLibDrop = (e: Event) => {
-      const { clientX, clientY, block } = (e as CustomEvent).detail as { clientX: number; clientY: number; block: WorkspaceBlock };
-      const pos  = toCanvas(clientX, clientY);
-      const tempStack: BlockStack = { id: '__lib__', x: pos.x, y: pos.y, blocks: [block] };
-      const snap        = findSnap(tempStack, pos.x, pos.y);
-      const bracketSnap = !snap ? findBracketSnap(tempStack, pos.x, pos.y) : null;
-      const wsBlock: WorkspaceBlock = { ...block, id: `ws_${Date.now()}_${block.id}` };
-      const stks = localStacksRef.current;
-
-      if (snap) {
-        const next = stks.map(s => {
-          if (s.id !== snap.id) return s;
-          const merged = [...s.blocks];
-          merged.splice(snap.insertAt, 0, wsBlock);
-          return { ...s, blocks: merged };
-        });
-        localStacksRef.current = next;
-        setStacks(next);
-      } else if (bracketSnap) {
-        const next = stks.map(s => s.id === bracketSnap.stackId
-          ? { ...s, blocks: s.blocks.map(b => b.id === bracketSnap.bracketBlockId
-              ? { ...b, innerBlocks: [...(b.innerBlocks ?? []), wsBlock] } : b) }
-          : s);
-        localStacksRef.current = next;
-        setStacks(next);
-      } else {
-        addStackRef.current(wsBlock, Math.max(10, pos.x - 60), Math.max(10, pos.y - 30));
-      }
-
-      setLibDragBlock(null);
-      setSnapTargetId(null);
-      setSnapPreviewPos(null);
-    };
-
-    const onLibEnd = () => {
-      setLibDragBlock(null);
-      setSnapTargetId(null);
-      setSnapPreviewPos(null);
-    };
-
     document.addEventListener('pointerdown', onDown);
     document.addEventListener('pointermove', onMove);
     document.addEventListener('pointerup',   onUp);
-    document.addEventListener('pipas:libdrag:move', onLibMove);
-    document.addEventListener('pipas:libdrag:drop', onLibDrop);
-    document.addEventListener('pipas:libdrag:end',  onLibEnd);
     return () => {
       document.removeEventListener('pointerdown', onDown);
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup',   onUp);
-      document.removeEventListener('pipas:libdrag:move', onLibMove);
-      document.removeEventListener('pipas:libdrag:drop', onLibDrop);
-      document.removeEventListener('pipas:libdrag:end',  onLibEnd);
     };
   }, [stackAt, blockIdxAt, accumHeight, findSnap, findBracketSnap, setStacks, dragAnimX, dragAnimY]);
 

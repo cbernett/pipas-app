@@ -18,7 +18,7 @@ export default function AppHeader() {
         {/* Logo — centered (replace icon.png with your logo file) */}
         <View style={styles.logoContainer}>
           <Image
-            source={require('../../assets/icon.png')}
+            source={require('../../assets/pipas_loog_app_header.png')}
             style={styles.logoImage}
             resizeMode="contain"
           />
@@ -83,7 +83,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logoImage: {
-    width: 38,
+    width: 120,
     height: 38,
   },
   tabs: {

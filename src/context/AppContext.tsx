@@ -18,11 +18,8 @@ export interface WorkspaceBlock {
 interface AppContextType {
   boardStatus: BoardStatus;
   setBoardStatus: (s: BoardStatus) => void;
-  /** true when program is armed (listening for events or actively running) */
-  isRunning: boolean;
-  /** index of the block currently highlighted during execution; null when idle/listening */
+  /** index of the block currently highlighted during execution; null when idle */
   activeBlockIndex: number | null;
-  armProgram: (blocks: WorkspaceBlock[]) => void;
   stopRun: () => void;
   simulateTouch: (pad: number) => void;
   /** Tap a single block to preview its immediate effect (plays sound, etc.) */
@@ -55,11 +52,13 @@ export const useApp = () => {
 
 function blockDuration(block: WorkspaceBlock): number {
   const label = block.label.toLowerCase();
+  // Only "espere" blocks use their explicit duration
   const waitMatch = label.match(/espere\s+([\d.]+)/);
   if (waitMatch) return Math.min(parseFloat(waitMatch[1]) * 1000, 5000);
-  if (block.category === 'Eventos') return 500;
-  if (block.category === 'Som') return 1200;
-  return 600;
+  // Everything else: just long enough to see the highlight flash
+  if (block.category === 'Eventos') return 100;
+  if (block.category === 'Som')     return 350; // sound fires async; small pause feels natural
+  return 200;
 }
 
 // Flatten blocks for sequential execution (includes innerBlocks)
@@ -83,7 +82,6 @@ async function executeBlock(block: WorkspaceBlock): Promise<void> {
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [boardStatus, setBoardStatus] = useState<BoardStatus>('disconnected');
-  const [isRunning, setIsRunning] = useState(false);
   const [activeBlockIndex, setActiveBlockIndex] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<'codigo' | 'sons'>('codigo');
   const [workspaceBlocks, setWorkspaceBlocks] = useState<WorkspaceBlock[]>([]);
@@ -95,7 +93,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const runAbortRef      = useRef(false);
   const isExecutingRef   = useRef(false); // true only while stepping through blocks
-  const isRunningRef     = useRef(false); // true while armed (listening)
+  const isRunningRef     = useRef(true);  // always armed — program always listens
   const workspaceBlocksRef = useRef<WorkspaceBlock[]>([]);
   const executeScriptRef = useRef<(blocks: WorkspaceBlock[]) => void>(() => {});
 
@@ -105,12 +103,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const stopRun = useCallback(() => {
+    // Abort current execution but stay armed — program keeps listening
     runAbortRef.current = true;
-    isRunningRef.current = false;
     isExecutingRef.current = false;
-    setIsRunning(false);
     setActiveBlockIndex(null);
     setUsbDisconnectedWhileRunning(false);
+    // Re-enable execution on next touch
+    setTimeout(() => { runAbortRef.current = false; }, 50);
   }, []);
 
   // Execute a flat list of blocks sequentially, with highlight
@@ -162,27 +161,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const script = startIdx >= 0 ? blocks.slice(startIdx) : blocks;
 
-    // Auto-arm if not already running so the board can trigger without pressing ▶
-    if (!isRunningRef.current) {
-      runAbortRef.current = false;
-      isRunningRef.current = true;
-      setIsRunning(true);
-    }
+    runAbortRef.current = false;
     executeScriptRef.current(script);
   }, []);
 
   useEffect(() => board.onTouch(handleTouchPad), [handleTouchPad]);
 
-  /** Arm the program: enter listening mode and immediately do a preview run */
-  const armProgram = useCallback((blocks: WorkspaceBlock[]) => {
-    if (!blocks.length) return;
-    runAbortRef.current = false;
-    isRunningRef.current = true;
-    setIsRunning(true);
-    setActiveBlockIndex(null);
-    // Immediately preview-run the full script
-    executeScriptRef.current(blocks);
-  }, []);
 
   const simulateTouch = useCallback((pad: number) => handleTouchPad(pad), [handleTouchPad]);
 
@@ -191,21 +175,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     executeBlock(block).catch(() => {});
   }, []);
 
-  /** Run from this block downward, arming the program first if not already armed */
+  /** Run from this block downward */
   const triggerScript = useCallback((blocksFromHere: WorkspaceBlock[]) => {
     if (!blocksFromHere.length) return;
-    if (isExecutingRef.current) return; // already mid-run
+    if (isExecutingRef.current) return;
     runAbortRef.current = false;
-    isRunningRef.current = true;
-    setIsRunning(true);
     executeScriptRef.current(blocksFromHere);
   }, []);
 
   return (
     <AppContext.Provider value={{
       boardStatus, setBoardStatus,
-      isRunning, activeBlockIndex,
-      armProgram, stopRun, simulateTouch, tapBlock, triggerScript,
+      activeBlockIndex,
+      stopRun, simulateTouch, tapBlock, triggerScript,
       activeTab, setActiveTab,
       workspaceBlocks, setWorkspaceBlocks: _setWorkspaceBlocks,
       libraryOpen, setLibraryOpen,

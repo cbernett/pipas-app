@@ -12,7 +12,7 @@ const TRASH_ZONE_H = 72;
 export default function Workspace() {
   const {
     workspaceBlocks, setWorkspaceBlocks,
-    isRunning, activeBlockIndex,
+    activeBlockIndex,
     usbDisconnectedWhileRunning,
     tapBlock, triggerScript,
   } = useApp();
@@ -121,8 +121,8 @@ export default function Workspace() {
     >
       <View style={StyleSheet.absoluteFill} pointerEvents="none"><DotGrid /></View>
 
-      {/* Running bar */}
-      {isRunning && !usbDisconnectedWhileRunning && (
+      {/* Running bar — visible while actively stepping through blocks */}
+      {activeBlockIndex !== null && !usbDisconnectedWhileRunning && (
         <View style={styles.runningBar} pointerEvents="none" />
       )}
 
@@ -132,18 +132,11 @@ export default function Workspace() {
         </View>
       )}
 
-      {/* "Press play" hint when idle */}
-      {!isRunning && (
-        <View style={styles.playHint} pointerEvents="none">
-          <Text style={styles.playHintText}>▶  clique em jogar para iniciar</Text>
-        </View>
-      )}
-
-      {/* Listening badge */}
-      {isRunning && activeBlockIndex === null && (
+      {/* Listening badge — always shown when idle (program is always on) */}
+      {activeBlockIndex === null && !usbDisconnectedWhileRunning && (
         <View style={styles.listeningBadge} pointerEvents="none">
           <View style={styles.listeningDot} />
-          <Text style={styles.listeningText}>aguardando toque na placa…</Text>
+          <Text style={styles.listeningText}>toque na placa para iniciar</Text>
         </View>
       )}
 
@@ -182,9 +175,13 @@ export default function Workspace() {
                   isLast={index === displayBlocks.length - 1}
                   isDragging={isDragging}
                   isActive={activeBlockIndex === index}
-                  onEventTap={block.category === 'Eventos'
-                    ? () => handleEventTap(block, index)
-                    : undefined}
+                  onEventTap={
+                    // Touch event blocks live in Luz category (luz_1/2/3) or Eventos
+                    (block.category === 'Eventos' ||
+                     block.defId === 'luz_1' || block.defId === 'luz_2' || block.defId === 'luz_3')
+                      ? () => handleEventTap(block, index)
+                      : undefined
+                  }
                   onBlockTap={() => handleBlockTap(block)}
                 />
               </Animated.View>

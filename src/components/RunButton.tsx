@@ -1,62 +1,50 @@
 import React from 'react';
 import { TouchableOpacity, View, StyleSheet } from 'react-native';
 import { useApp } from '../context/AppContext';
-import { EXAMPLE_PROGRAM } from '../data/blocks';
 
+/**
+ * Only visible when a script is actively stepping through blocks.
+ * Tapping it stops the current execution.
+ * When idle the button is invisible — the program is always listening.
+ */
 export default function RunButton() {
-  const { isRunning, armProgram, stopRun, workspaceBlocks } = useApp();
+  const { activeBlockIndex, stopRun } = useApp();
 
-  const handlePress = () => {
-    if (isRunning) {
-      stopRun();
-    } else {
-      const blocks = workspaceBlocks.length > 0 ? workspaceBlocks : EXAMPLE_PROGRAM;
-      armProgram(blocks);
-    }
-  };
+  const isExecuting = activeBlockIndex !== null;
+
+  if (!isExecuting) return <View style={styles.placeholder} />;
 
   return (
     <TouchableOpacity
       style={styles.button}
-      onPress={handlePress}
+      onPress={stopRun}
       activeOpacity={0.85}
     >
-      {isRunning ? (
-        <View style={styles.stopContainer}>
-          <View style={styles.stopBar} />
-          <View style={styles.stopBar} />
-        </View>
-      ) : (
-        <View style={styles.playTriangle} />
-      )}
+      <View style={styles.stopContainer}>
+        <View style={styles.stopBar} />
+        <View style={styles.stopBar} />
+      </View>
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
+  placeholder: {
+    width: 44,
+    height: 44,
+  },
   button: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#6B4FBB',
+    backgroundColor: '#EF4444',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#6B4FBB',
+    shadowColor: '#EF4444',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.4,
     shadowRadius: 6,
     elevation: 4,
-  },
-  playTriangle: {
-    width: 0,
-    height: 0,
-    borderTopWidth: 8,
-    borderBottomWidth: 8,
-    borderLeftWidth: 14,
-    borderTopColor: 'transparent',
-    borderBottomColor: 'transparent',
-    borderLeftColor: '#FFFFFF',
-    marginLeft: 3,
   },
   stopContainer: {
     flexDirection: 'row',

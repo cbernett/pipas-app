@@ -11,15 +11,8 @@ export default function AppHeader() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Single row: logo | tabs | actions — all bottom-aligned */}
       <View style={styles.row}>
-        <Image
-          source={require('../../assets/pipas_loog_app_header.png')}
-          style={styles.logoImage}
-          resizeMode="contain"
-        />
-
-        {/* Tabs sit flush at the bottom of the row */}
+        {/* Left: tabs */}
         <View style={styles.tabs}>
           <TouchableOpacity
             style={[styles.tab, activeTab === 'codigo' && styles.tabActive]}
@@ -41,7 +34,16 @@ export default function AppHeader() {
           </TouchableOpacity>
         </View>
 
-        {/* Right actions — bottom-aligned with the tabs */}
+        {/* Center: logo */}
+        <View style={styles.logoContainer}>
+          <Image
+            source={require('../../assets/pipas_loog_app_header.png')}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
+        </View>
+
+        {/* Right: connect + stop */}
         <View style={styles.actions}>
           <RunButton />
           <BoardStatusButton />
@@ -63,12 +65,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 16,
   },
-  logoImage: {
-    width: 160,
-    height: 52,
-    marginRight: 8,
-    marginBottom: 4,
-  },
+
+  // Left — tabs flush to bottom
   tabs: {
     flex: 1,
     flexDirection: 'row',
@@ -91,8 +89,27 @@ const styles = StyleSheet.create({
   tabTextActive: {
     color: '#FFF',
   },
+
+  // Center — logo
+  logoContainer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    pointerEvents: 'none',
+  } as any,
+  logoImage: {
+    width: 160,
+    height: 52,
+    marginBottom: 4,
+  },
+
+  // Right — bottom-aligned actions
   actions: {
+    flex: 1,
     flexDirection: 'row',
+    justifyContent: 'flex-end',
     alignItems: 'flex-end',
     gap: 6,
     paddingBottom: 6,

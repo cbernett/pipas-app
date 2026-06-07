@@ -1,34 +1,60 @@
 import React, { useRef, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Animated,
-  ScrollView, Dimensions,
+  ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../context/AppContext';
 import CategoryBand from './CategoryBand';
 import { BLOCKS, BlockCategory } from '../data/blocks';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-const COLLAPSED_HEIGHT = 72;
-const OPEN_HEIGHT      = SCREEN_HEIGHT * 0.58;
-
 const CATEGORIES: BlockCategory[] = ['Movimento', 'Luz', 'Som', 'Eventos', 'Controle'];
+
+const HANDLE_HEIGHT = 56;
+const BAND_HEIGHT   = 56;
+// Drawer is always this height when open — never changes
+const OPEN_HEIGHT   = HANDLE_HEIGHT + CATEGORIES.length * BAND_HEIGHT; // 336
+
+// Peek: how many px of the category above show when a category is expanded
+const PEEK = 16;
 
 export default function BlockLibraryBottomSheet() {
   const { libraryOpen, setLibraryOpen, expandedCategory, setExpandedCategory } = useApp();
   const insets = useSafeAreaInsets();
+  const scrollRef = useRef<ScrollView>(null);
 
-  const sheetHeight = useRef(new Animated.Value(COLLAPSED_HEIGHT)).current;
+  const sheetHeight = useRef(new Animated.Value(HANDLE_HEIGHT)).current;
 
+  // Height only changes on open/close — not on category selection
   useEffect(() => {
     Animated.spring(sheetHeight, {
-      toValue: libraryOpen ? OPEN_HEIGHT : COLLAPSED_HEIGHT,
+      toValue: libraryOpen ? OPEN_HEIGHT : HANDLE_HEIGHT,
       useNativeDriver: false,
-      tension: 80,
-      friction: 12,
+      tension: 90,
+      friction: 14,
     }).start();
-    if (!libraryOpen) setExpandedCategory(null);
+
+    if (!libraryOpen) {
+      setExpandedCategory(null);
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
+    }
   }, [libraryOpen]);
+
+  // Scroll when category selection changes — drawer height stays fixed
+  useEffect(() => {
+    if (expandedCategory) {
+      const idx = CATEGORIES.indexOf(expandedCategory as BlockCategory);
+      // Show 16px of the previous bar peeking above; first category goes flush to top
+      const scrollY = Math.max(0, idx * BAND_HEIGHT - PEEK);
+      scrollRef.current?.scrollTo({ y: scrollY, animated: true });
+    } else {
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+    }
+  }, [expandedCategory]);
+
+  const handleCategoryToggle = (cat: BlockCategory) => {
+    setExpandedCategory(expandedCategory === cat ? null : cat);
+  };
 
   return (
     <Animated.View style={[styles.sheet, { height: sheetHeight }]}>
@@ -42,20 +68,23 @@ export default function BlockLibraryBottomSheet() {
         <Text style={styles.libraryLabel}>BIBLIOTECA DE BLOCOS</Text>
       </TouchableOpacity>
 
-      {/* Category bands */}
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+      {/* Fixed-order category list; scrolls programmatically on selection */}
+      <ScrollView
+        ref={scrollRef}
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        scrollEnabled={false}
+      >
         {CATEGORIES.map((cat) => (
           <CategoryBand
             key={cat}
             category={cat}
             blocks={BLOCKS.filter((b) => b.category === cat)}
             isExpanded={expandedCategory === cat}
-            onToggle={() =>
-              setExpandedCategory(expandedCategory === cat ? null : cat)
-            }
+            onToggle={() => handleCategoryToggle(cat)}
           />
         ))}
-        <View style={{ height: insets.bottom + 20 }} />
+        <View style={{ height: insets.bottom }} />
       </ScrollView>
     </Animated.View>
   );
@@ -63,30 +92,27 @@ export default function BlockLibraryBottomSheet() {
 
 const styles = StyleSheet.create({
   sheet: {
-    // No absolute positioning — sits as a flex child at bottom of CodigoScreen
     width: '100%',
     backgroundColor: '#1C1F2B',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
     overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 20,
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 6,
   },
   handleArea: {
-    height: COLLAPSED_HEIGHT,
+    height: HANDLE_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 6,
     flexShrink: 0,
   },
   handle: {
-    width: 40,
+    width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: 'rgba(255,255,255,0.2)',
   },
   libraryLabel: {
     color: 'rgba(255,255,255,0.6)',

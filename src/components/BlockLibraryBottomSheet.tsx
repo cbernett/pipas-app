@@ -1,7 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Animated,
-  ScrollView, Dimensions,
+  ScrollView, Dimensions, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../context/AppContext';
@@ -66,7 +66,7 @@ export default function BlockLibraryBottomSheet() {
 
 const styles = StyleSheet.create({
   sheet: {
-    position: 'absolute',
+    position: Platform.OS === 'web' ? ('fixed' as any) : 'absolute',
     bottom: 0,
     left: 0,
     right: 0,

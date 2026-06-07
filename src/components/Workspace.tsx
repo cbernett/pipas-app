@@ -6,8 +6,15 @@ import { useApp, WorkspaceBlock } from '../context/AppContext';
 import CodeBlock from './CodeBlock';
 import { EXAMPLE_PROGRAM } from '../data/blocks';
 
-const DOTS_SPACING = 24;
-const TRASH_ZONE_H = 72;
+const DOTS_SPACING  = 24;
+const TRASH_ZONE_H  = 72;
+const DRAG_THRESHOLD = 8; // px before drag activates
+
+function isTouchEventBlock(b: WorkspaceBlock) {
+  return b.category === 'Eventos' ||
+    b.defId === 'evt_touch_1' || b.defId === 'evt_touch_2' || b.defId === 'evt_touch_3' ||
+    b.defId === 'luz_1' || b.defId === 'luz_2' || b.defId === 'luz_3'; // backward compat
+}
 
 export default function Workspace() {
   const {
@@ -17,111 +24,153 @@ export default function Workspace() {
     tapBlock, triggerScript,
   } = useApp();
 
-  const displayBlocks = workspaceBlocks.length > 0 ? workspaceBlocks : EXAMPLE_PROGRAM;
+  const displayBlocks    = workspaceBlocks.length > 0 ? workspaceBlocks : EXAMPLE_PROGRAM as WorkspaceBlock[];
+  const displayBlocksRef = useRef(displayBlocks);
+  useEffect(() => { displayBlocksRef.current = displayBlocks; }, [displayBlocks]);
 
-  // ── Drag state ──────────────────────────────────────────────────────────
+  // ── Drag visual state ────────────────────────────────────────────────────
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
   const [dropIndex,     setDropIndex]     = useState<number | null>(null);
   const [overTrash,     setOverTrash]     = useState(false);
-  const dragAnim           = useRef(new Animated.Value(0)).current;
-  const draggingIndexRef   = useRef<number | null>(null);
-  const hasMovedRef        = useRef(false);
-  const startClientYRef    = useRef(0);
-  const itemLayouts        = useRef<{ y: number; height: number }[]>([]);
-  const scrollOffsetRef    = useRef(0);
-  const containerTopRef    = useRef(0);
-  const containerBottomRef = useRef(0);
-  const displayBlocksRef   = useRef(displayBlocks);
-  useEffect(() => { displayBlocksRef.current = displayBlocks; }, [displayBlocks]);
+  const dragAnim = useRef(new Animated.Value(0)).current;
+
+  // ── Layout tracking ──────────────────────────────────────────────────────
+  const itemLayouts     = useRef<{ y: number; height: number }[]>([]);
+  const scrollOffsetRef = useRef(0);
+  const containerRef    = useRef<any>(null);  // DOM element ref (web)
+  const containerYRef   = useRef(0);          // fallback for native
+  const containerHRef   = useRef(0);
+
+  // ── Flag: suppress tap handler if a drag just completed ─────────────────
+  const draggedRecentlyRef = useRef(false);
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  const getContainerTop = useCallback(() => {
+    if (containerRef.current?.getBoundingClientRect) {
+      return containerRef.current.getBoundingClientRect().top;
+    }
+    return containerYRef.current;
+  }, []);
 
   const getDropIndex = useCallback((clientY: number): number => {
-    const relY = clientY - containerTopRef.current + scrollOffsetRef.current;
+    const relY = (clientY - getContainerTop()) + scrollOffsetRef.current;
     for (let i = 0; i < itemLayouts.current.length; i++) {
       const l = itemLayouts.current[i];
       if (l && relY < l.y + l.height / 2) return i;
     }
     return itemLayouts.current.length;
-  }, []);
+  }, [getContainerTop]);
 
-  const isOverTrash = (clientY: number) =>
-    clientY > containerBottomRef.current - TRASH_ZONE_H;
+  const isOverTrashZone = useCallback((clientY: number) => {
+    const containerBottom = getContainerTop() + containerHRef.current;
+    return clientY > containerBottom - TRASH_ZONE_H;
+  }, [getContainerTop]);
 
   const cancelDrag = useCallback(() => {
     setDraggingIndex(null);
     setDropIndex(null);
     setOverTrash(false);
     dragAnim.setValue(0);
-    draggingIndexRef.current = null;
-    hasMovedRef.current = false;
   }, [dragAnim]);
 
-  // Web drag: starts on pointer-down, tracks via window mouse events
-  const startDrag = useCallback((index: number, clientY: number) => {
-    if (typeof window === 'undefined') return;
-    draggingIndexRef.current = index;
-    startClientYRef.current = clientY;
-    hasMovedRef.current = false;
+  // ── Pointer-event drag system (web) ──────────────────────────────────────
+  useEffect(() => {
+    if (typeof document === 'undefined') return; // native: skip
 
-    const onMove = (e: MouseEvent) => {
-      const dy = e.clientY - startClientYRef.current;
-      if (!hasMovedRef.current && Math.abs(dy) > 6) {
-        hasMovedRef.current = true;
-        setDraggingIndex(index);
+    let activeIdx: number | null = null;
+    let startY = 0;
+    let moved  = false;
+
+    const getBlockAt = (clientY: number): number | null => {
+      const relY = (clientY - getContainerTop()) + scrollOffsetRef.current;
+      for (let i = 0; i < itemLayouts.current.length; i++) {
+        const l = itemLayouts.current[i];
+        if (l && relY >= l.y && relY < l.y + l.height) return i;
       }
-      if (!hasMovedRef.current) return;
-      dragAnim.setValue(dy);
-      setOverTrash(isOverTrash(e.clientY));
-      setDropIndex(isOverTrash(e.clientY) ? null : getDropIndex(e.clientY));
+      return null;
     };
 
-    const onUp = (e: MouseEvent) => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-      if (!hasMovedRef.current) { cancelDrag(); return; }
+    const onDown = (e: PointerEvent) => {
+      const idx = getBlockAt(e.clientY);
+      if (idx === null) return;
+      activeIdx = idx;
+      startY    = e.clientY;
+      moved     = false;
+    };
 
-      const from = draggingIndexRef.current!;
+    const onMove = (e: PointerEvent) => {
+      if (activeIdx === null) return;
+      const dy = e.clientY - startY;
+      if (!moved && Math.abs(dy) > DRAG_THRESHOLD) {
+        moved = true;
+        setDraggingIndex(activeIdx);
+      }
+      if (!moved) return;
+      dragAnim.setValue(dy);
+      setOverTrash(isOverTrashZone(e.clientY));
+      setDropIndex(isOverTrashZone(e.clientY) ? null : getDropIndex(e.clientY));
+    };
+
+    const onUp = (e: PointerEvent) => {
+      if (activeIdx === null) return;
+      const from = activeIdx;
+      activeIdx  = null;
+
+      if (!moved) return; // tap — let TouchableOpacity handle it normally
+
+      // It was a drag — suppress any subsequent tap event
+      draggedRecentlyRef.current = true;
+      setTimeout(() => { draggedRecentlyRef.current = false; }, 150);
+
       const blocks = displayBlocksRef.current;
-
-      if (isOverTrash(e.clientY)) {
+      if (isOverTrashZone(e.clientY)) {
         setWorkspaceBlocks(blocks.filter((_, i) => i !== from));
       } else {
         const to = getDropIndex(e.clientY);
         if (to !== from && to !== from + 1) {
           const arr = [...blocks];
-          const [moved] = arr.splice(from, 1);
-          arr.splice(to > from ? to - 1 : to, 0, moved);
+          const [m]  = arr.splice(from, 1);
+          arr.splice(to > from ? to - 1 : to, 0, m);
           setWorkspaceBlocks(arr);
         }
       }
       cancelDrag();
+      moved = false;
     };
 
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  }, [dragAnim, cancelDrag, getDropIndex]);
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup',   onUp);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup',   onUp);
+    };
+  }, [dragAnim, cancelDrag, getDropIndex, isOverTrashZone, setWorkspaceBlocks]);
 
-  // Event block tapped → run the script starting from this block
+  // ── Tap handlers ─────────────────────────────────────────────────────────
   const handleEventTap = useCallback((block: WorkspaceBlock, index: number) => {
-    triggerScript(displayBlocks.slice(index));
-  }, [triggerScript, displayBlocks]);
+    if (draggedRecentlyRef.current) return;
+    triggerScript(displayBlocksRef.current.slice(index));
+  }, [triggerScript]);
 
-  // Any block tapped → preview its immediate effect (sound, etc.)
   const handleBlockTap = useCallback((block: WorkspaceBlock) => {
+    if (draggedRecentlyRef.current) return;
     tapBlock(block);
   }, [tapBlock]);
 
+  // ── Render ───────────────────────────────────────────────────────────────
   return (
     <View
+      ref={containerRef}
       style={styles.container}
       onLayout={(e) => {
-        // Approximate container position — good enough for web prototype
-        containerTopRef.current = e.nativeEvent.layout.y;
-        containerBottomRef.current = e.nativeEvent.layout.y + e.nativeEvent.layout.height;
+        containerYRef.current = e.nativeEvent.layout.y;
+        containerHRef.current = e.nativeEvent.layout.height;
       }}
     >
       <View style={StyleSheet.absoluteFill} pointerEvents="none"><DotGrid /></View>
 
-      {/* Running bar — visible while actively stepping through blocks */}
       {activeBlockIndex !== null && !usbDisconnectedWhileRunning && (
         <View style={styles.runningBar} pointerEvents="none" />
       )}
@@ -132,7 +181,6 @@ export default function Workspace() {
         </View>
       )}
 
-      {/* Listening badge — always shown when idle (program is always on) */}
       {activeBlockIndex === null && !usbDisconnectedWhileRunning && (
         <View style={styles.listeningBadge} pointerEvents="none">
           <View style={styles.listeningDot} />
@@ -148,7 +196,7 @@ export default function Workspace() {
         onScroll={(e) => { scrollOffsetRef.current = e.nativeEvent.contentOffset.y; }}
       >
         {displayBlocks.map((block, index) => {
-          const isDragging  = draggingIndex === index;
+          const isDragging   = draggingIndex === index;
           const isDropBefore = dropIndex === index && draggingIndex !== null && draggingIndex !== index;
           const isDropAfter  = dropIndex === index + 1 && draggingIndex !== null && draggingIndex !== index;
 
@@ -164,10 +212,11 @@ export default function Workspace() {
             >
               {isDropBefore && <DropLine color={displayBlocks[draggingIndex!]?.color} />}
 
+              {/* No responder props — pointer events handle drag, TouchableOpacity handles tap */}
               <Animated.View
-                onStartShouldSetResponder={() => true}
-                onResponderGrant={(e) => startDrag(index, e.nativeEvent.pageY)}
-                style={isDragging ? [{ transform: [{ translateY: dragAnim }], zIndex: 100 }] : undefined}
+                style={isDragging
+                  ? { transform: [{ translateY: dragAnim }], zIndex: 100 }
+                  : undefined}
               >
                 <CodeBlock
                   block={block}
@@ -175,13 +224,9 @@ export default function Workspace() {
                   isLast={index === displayBlocks.length - 1}
                   isDragging={isDragging}
                   isActive={activeBlockIndex === index}
-                  onEventTap={
-                    // Touch event blocks live in Luz category (luz_1/2/3) or Eventos
-                    (block.category === 'Eventos' ||
-                     block.defId === 'luz_1' || block.defId === 'luz_2' || block.defId === 'luz_3')
-                      ? () => handleEventTap(block, index)
-                      : undefined
-                  }
+                  onEventTap={isTouchEventBlock(block)
+                    ? () => handleEventTap(block, index)
+                    : undefined}
                   onBlockTap={() => handleBlockTap(block)}
                 />
               </Animated.View>
@@ -198,7 +243,6 @@ export default function Workspace() {
         )}
       </ScrollView>
 
-      {/* Trash zone — appears while dragging */}
       {draggingIndex !== null && (
         <View style={[styles.trashZone, overTrash && styles.trashZoneActive]}>
           <Text style={styles.trashIcon}>{overTrash ? '🗑️' : '↓'}</Text>
@@ -246,25 +290,13 @@ const styles = StyleSheet.create({
   },
   usbBannerText: { color: '#FFF', fontSize: 15, fontWeight: '700', textAlign: 'center' },
 
-  // "Press play" hint
-  playHint: {
-    position: 'absolute', bottom: 90, left: 0, right: 0,
-    alignItems: 'center', zIndex: 5,
-  },
-  playHintText: {
-    color: 'rgba(255,255,255,0.2)', fontSize: 13, fontWeight: '600', letterSpacing: 0.5,
-  },
-
-  // Listening badge
   listeningBadge: {
     position: 'absolute', top: 12, right: 16, zIndex: 15,
     flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: 'rgba(34,197,94,0.15)',
     borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6,
   },
-  listeningDot: {
-    width: 8, height: 8, borderRadius: 4, backgroundColor: '#22C55E',
-  },
+  listeningDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#22C55E' },
   listeningText: { color: '#22C55E', fontSize: 12, fontWeight: '600' },
 
   dropLine: { height: 4, borderRadius: 2, marginVertical: 3, opacity: 0.85 },
@@ -282,9 +314,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     flexDirection: 'row', gap: 10,
   },
-  trashZoneActive: {
-    backgroundColor: 'rgba(239,68,68,0.9)', borderTopColor: '#EF4444',
-  },
-  trashIcon: { fontSize: 20 },
+  trashZoneActive: { backgroundColor: 'rgba(239,68,68,0.9)', borderTopColor: '#EF4444' },
+  trashIcon:  { fontSize: 20 },
   trashLabel: { color: 'rgba(255,255,255,0.8)', fontSize: 13, fontWeight: '600' },
 });

@@ -72,7 +72,7 @@ export default function CategoryBand({ category, blocks, isExpanded, onToggle }:
 
 const styles = StyleSheet.create({
   band: {
-    height: 96,
+    height: 82,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 24,

@@ -154,7 +154,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     //   luz_1/luz_2/luz_3 = library touch blocks (pad 1/2/3)
     //   any label containing "toque {pad}" = example program or renamed blocks
     const startIdx = blocks.findIndex(b => {
-      if (b.defId === `luz_${pad}`) return true;
+      if (b.defId === `evt_touch_${pad}`) return true; // new canonical ID
+      if (b.defId === `luz_${pad}`) return true;        // backward compat
       if (b.label.toLowerCase().includes(`toque ${pad}`)) return true;
       return false;
     });

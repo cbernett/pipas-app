@@ -22,13 +22,13 @@ export default function BoardStatusButton() {
 
 const styles = StyleSheet.create({
   btn: {
-    width: 44,
-    height: 44,
+    width: 34,
+    height: 34,
     alignItems: 'center',
     justifyContent: 'center',
   },
   icon: {
-    width: 44,
-    height: 44,
+    width: 34,
+    height: 34,
   },
 });

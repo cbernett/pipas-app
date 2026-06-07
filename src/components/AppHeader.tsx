@@ -62,6 +62,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     paddingHorizontal: 12,
     paddingTop: 28,
+    paddingBottom: 10,
   },
 
   // Left — tabs flush to bottom

@@ -1,7 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Animated,
-  ScrollView, Dimensions, Platform,
+  ScrollView, Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../context/AppContext';
@@ -11,8 +11,6 @@ import { BLOCKS, BlockCategory } from '../data/blocks';
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const COLLAPSED_HEIGHT = 72;
 const OPEN_HEIGHT      = SCREEN_HEIGHT * 0.58;
-// How far to push the sheet below the fold when collapsed
-const HIDDEN_OFFSET    = OPEN_HEIGHT - COLLAPSED_HEIGHT;
 
 const CATEGORIES: BlockCategory[] = ['Movimento', 'Luz', 'Som', 'Eventos', 'Controle'];
 
@@ -20,13 +18,12 @@ export default function BlockLibraryBottomSheet() {
   const { libraryOpen, setLibraryOpen, expandedCategory, setExpandedCategory } = useApp();
   const insets = useSafeAreaInsets();
 
-  // Slide the sheet down by HIDDEN_OFFSET when collapsed, 0 when open
-  const translateY = useRef(new Animated.Value(HIDDEN_OFFSET)).current;
+  const sheetHeight = useRef(new Animated.Value(COLLAPSED_HEIGHT)).current;
 
   useEffect(() => {
-    Animated.spring(translateY, {
-      toValue: libraryOpen ? 0 : HIDDEN_OFFSET,
-      useNativeDriver: true,
+    Animated.spring(sheetHeight, {
+      toValue: libraryOpen ? OPEN_HEIGHT : COLLAPSED_HEIGHT,
+      useNativeDriver: false,
       tension: 80,
       friction: 12,
     }).start();
@@ -34,7 +31,7 @@ export default function BlockLibraryBottomSheet() {
   }, [libraryOpen]);
 
   return (
-    <Animated.View style={[styles.sheet, { transform: [{ translateY }] }]}>
+    <Animated.View style={[styles.sheet, { height: sheetHeight }]}>
       {/* Handle / header */}
       <TouchableOpacity
         style={styles.handleArea}
@@ -45,7 +42,7 @@ export default function BlockLibraryBottomSheet() {
         <Text style={styles.libraryLabel}>BIBLIOTECA DE BLOCOS</Text>
       </TouchableOpacity>
 
-      {/* Category bands — always mounted so pointer events stay attached */}
+      {/* Category bands */}
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {CATEGORIES.map((cat) => (
           <CategoryBand
@@ -66,11 +63,8 @@ export default function BlockLibraryBottomSheet() {
 
 const styles = StyleSheet.create({
   sheet: {
-    position: Platform.OS === 'web' ? ('fixed' as any) : 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: OPEN_HEIGHT,         // fixed height, translateY slides it off-screen
+    // No absolute positioning — sits as a flex child at bottom of CodigoScreen
+    width: '100%',
     backgroundColor: '#1C1F2B',
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
@@ -86,6 +80,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
+    flexShrink: 0,
   },
   handle: {
     width: 40,

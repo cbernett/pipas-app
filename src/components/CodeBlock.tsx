@@ -119,16 +119,22 @@ function BracketBlock({ block, preview, isActive, parts }: Props & { parts: any[
       </View>
       <View style={styles.bracketBody}>
         <View style={[styles.bracketArm, { backgroundColor: block.color }]} />
-        <View style={styles.bracketInner}>
-          {inner.length > 0
-            ? inner.map((ib, i) => (
-                <CodeBlock key={ib.id} block={ib} isFirst={i === 0} isLast={i === inner.length - 1} />
-              ))
-            : <View style={[styles.bracketSlot, { borderColor: block.color }]} />
-          }
+        <View style={styles.bracketInnerCol}>
+          {/* Tab coming DOWN at top of inner area — receives indent of first inner block */}
+          <View style={[styles.bracketInnerTab, { backgroundColor: block.color }]} />
+          <View style={styles.bracketInner}>
+            {inner.length > 0
+              ? inner.map((ib, i) => (
+                  <CodeBlock key={ib.id} block={ib} isFirst={i === 0} isLast={i === inner.length - 1} />
+                ))
+              : <View style={[styles.bracketSlot, { borderColor: block.color }]} />
+            }
+          </View>
         </View>
       </View>
       <View style={[styles.bracketBottom, { backgroundColor: block.color }]}>
+        {/* Indent slot at top of bracketBottom — last inner block's tab fits here */}
+        <View style={styles.indent} />
         <Text style={styles.returnArrow}>↩</Text>
       </View>
       {!preview && (
@@ -255,7 +261,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     borderTopLeftRadius: 999, borderBottomLeftRadius: 999,
     borderTopRightRadius: 999, borderBottomRightRadius: 999,
-    paddingLeft: 32,
+    paddingLeft: 16,
     paddingRight: 20,
     paddingVertical: 10,
     gap: 6,
@@ -270,12 +276,15 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: BLOCK_R, borderTopRightRadius: BLOCK_R,
     flexDirection: 'row', alignItems: 'center', gap: 6,
   },
-  bracketBody:  { flexDirection: 'row' },
-  bracketArm:   { width: 20, minHeight: 36 },
-  bracketInner: { flex: 1, paddingVertical: 6, paddingLeft: 8 },
-  bracketSlot:  { height: 36, borderRadius: 8, borderWidth: 2, borderStyle: 'dashed', opacity: 0.4 },
+  bracketBody:     { flexDirection: 'row' },
+  bracketArm:      { width: 20, minHeight: 36 },
+  bracketInnerCol: { flex: 1 },
+  bracketInnerTab: { width: TAB_W, height: TAB_H, borderBottomLeftRadius: 6, borderBottomRightRadius: 6 },
+  bracketInner:    { flex: 1, paddingVertical: 6, paddingLeft: 8 },
+  bracketSlot:     { height: 36, borderRadius: 8, borderWidth: 2, borderStyle: 'dashed', opacity: 0.4 },
   bracketBottom: {
-    height: 24, borderBottomLeftRadius: BLOCK_R, borderBottomRightRadius: BLOCK_R,
+    position: 'relative',
+    height: 28, borderBottomLeftRadius: BLOCK_R, borderBottomRightRadius: BLOCK_R,
     alignItems: 'center', justifyContent: 'center',
   },
   returnArrow: { color: 'rgba(255,255,255,0.55)', fontSize: 14 },

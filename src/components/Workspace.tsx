@@ -81,6 +81,37 @@ export default function Workspace() {
     return null;
   }, []);
 
+  // ── Bracket inner slot snap ─────────────────────────────────────────────
+  const findBracketSnap = useCallback((dragStack: BlockStack, dragX: number, dragY: number):
+    { stackId: string; bracketBlockId: string } | null => {
+    const BRACKET_DEF_IDS = ['ctrl_2', 'ctrl_3', 'ctrl_4'];
+    const BRACKET_TOP_H   = 52;
+    const BRACKET_BOT_H   = 28;
+    const ARM_W           = 20;
+
+    for (const s of localStacksRef.current) {
+      if (s.id === dragStack.id) continue;
+      const heights = blockHeightsRef.current[s.id] ?? [];
+      let acc = 0;
+      for (let bi = 0; bi < s.blocks.length; bi++) {
+        const b = s.blocks[bi];
+        if (BRACKET_DEF_IDS.includes(b.defId)) {
+          const blockH   = heights[bi] ?? 140;
+          const innerTop = s.y + acc + BRACKET_TOP_H;
+          const innerBot = s.y + acc + blockH - BRACKET_BOT_H;
+          const innerLeft  = s.x + ARM_W;
+          const innerRight = s.x + 360;
+          if (dragX >= innerLeft && dragX <= innerRight &&
+              dragY >= innerTop  && dragY <= innerBot) {
+            return { stackId: s.id, bracketBlockId: b.id };
+          }
+        }
+        acc += bi === 0 ? (heights[bi] ?? 58) : ((heights[bi] ?? 58) - TAB_H);
+      }
+    }
+    return null;
+  }, []);
+
   // ── Block index hit-test within a stack ─────────────────────────────────
   const blockIdxAt = useCallback((stackId: string, relY: number): number => {
     const heights = blockHeightsRef.current[stackId] ?? [];
@@ -215,15 +246,30 @@ export default function Workspace() {
       const dragStk = stks.find(s => s.id === dsId);
 
       if (dragStk) {
-        const snap = findSnap(dragStk, newX, newY);
+        const snap        = findSnap(dragStk, newX, newY);
+        const bracketSnap = !snap ? findBracketSnap(dragStk, newX, newY) : null;
         let next: BlockStack[];
 
         if (snap) {
-          // Merge onto snap target
+          // Merge onto snap target (end-to-end)
           next = stks
             .filter((s: BlockStack) => s.id !== dsId)
             .map((s: BlockStack) => s.id === snap.id
               ? { ...s, blocks: [...s.blocks, ...dragStk.blocks] }
+              : s
+            );
+        } else if (bracketSnap) {
+          // Drop into bracket's inner slot
+          next = stks
+            .filter((s: BlockStack) => s.id !== dsId)
+            .map((s: BlockStack) => s.id === bracketSnap.stackId
+              ? {
+                  ...s,
+                  blocks: s.blocks.map(b => b.id === bracketSnap.bracketBlockId
+                    ? { ...b, innerBlocks: [...(b.innerBlocks ?? []), ...dragStk.blocks] }
+                    : b
+                  ),
+                }
               : s
             );
         } else {
@@ -248,7 +294,7 @@ export default function Workspace() {
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup',   onUp);
     };
-  }, [stackAt, blockIdxAt, findSnap, setStacks, dragAnimX, dragAnimY]);
+  }, [stackAt, blockIdxAt, findSnap, findBracketSnap, setStacks, dragAnimX, dragAnimY]);
 
   // Helper: accumulated height of blocks 0..blockIdx-1 in a stack
   const accumHeight = (stackId: string, blockIdx: number): number => {
@@ -304,15 +350,21 @@ export default function Workspace() {
         contentContainerStyle={{ width: CANVAS_W }}
         scrollEnabled={!draggingId}
         scrollEventThrottle={16}
-        onScroll={e => { scrollOffset.current.x = e.nativeEvent.contentOffset.x; }}
+        onScroll={e => {
+            scrollOffset.current.x = e.nativeEvent.contentOffset.x;
+            (window as any).__workspaceScroll = { ...scrollOffset.current };
+          }}
       >
         <ScrollView
           contentContainerStyle={{ height: CANVAS_H }}
           scrollEnabled={!draggingId}
           scrollEventThrottle={16}
-          onScroll={e => { scrollOffset.current.y = e.nativeEvent.contentOffset.y; }}
+          onScroll={e => {
+            scrollOffset.current.y = e.nativeEvent.contentOffset.y;
+            (window as any).__workspaceScroll = { ...scrollOffset.current };
+          }}
         >
-          <View ref={canvasRef} style={styles.canvas}>
+          <View ref={canvasRef} nativeID="workspace-canvas" style={styles.canvas}>
 
             {/* Snap preview ghost */}
             {snapPreviewPos && draggingStack && (

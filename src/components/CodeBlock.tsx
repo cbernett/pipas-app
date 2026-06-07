@@ -111,32 +111,52 @@ function Tab({ color }: { color: string }) {
 
 function BracketBlock({ block, preview, isActive, parts }: Props & { parts: any[] }) {
   const inner = block.innerBlocks ?? [];
+  const hasInner = inner.length > 0;
   return (
     <View style={styles.wrapper}>
+      {/* Top bar */}
       <View style={[styles.bracketTop, { backgroundColor: block.color }, isActive && styles.bodyActive]}>
         {!preview && <View style={styles.indent} />}
         <BlockLabel parts={parts} />
       </View>
+
+      {/* C-body */}
       <View style={styles.bracketBody}>
         <View style={[styles.bracketArm, { backgroundColor: block.color }]} />
         <View style={styles.bracketInnerCol}>
-          {/* Tab coming DOWN at top of inner area — receives indent of first inner block */}
+          {/* Tab protruding DOWN — horizontally aligned with block indents, sits on top of first block's indent */}
           <View style={[styles.bracketInnerTab, { backgroundColor: block.color }]} />
+
+          {/* Inner content starts -TAB_H up so first block's indent overlaps bracketInnerTab */}
           <View style={styles.bracketInner}>
-            {inner.length > 0
+            {hasInner
               ? inner.map((ib, i) => (
-                  <CodeBlock key={ib.id} block={ib} isFirst={i === 0} isLast={i === inner.length - 1} />
+                  <View
+                    key={ib.id}
+                    style={{
+                      marginTop: -TAB_H,                       // every block overlaps previous connector by TAB_H
+                      zIndex: inner.length - i + 2,            // earlier blocks on top (same as Workspace stack)
+                    }}
+                  >
+                    <CodeBlock block={ib} isFirst={i === 0} isLast={i === inner.length - 1} />
+                  </View>
                 ))
               : <View style={[styles.bracketSlot, { borderColor: block.color }]} />
             }
           </View>
         </View>
       </View>
-      <View style={[styles.bracketBottom, { backgroundColor: block.color }]}>
-        {/* Indent slot at top of bracketBottom — last inner block's tab fits here */}
+
+      {/* Bottom bar — overlaps last inner block's outgoing tab by TAB_H */}
+      <View style={[
+        styles.bracketBottom,
+        { backgroundColor: block.color },
+        hasInner && { marginTop: -TAB_H, zIndex: 0 },
+      ]}>
         <View style={styles.indent} />
         <Text style={styles.returnArrow}>↩</Text>
       </View>
+
       {!preview && (
         <View style={styles.tabRow}>
           <Tab color={block.color} />
@@ -277,14 +297,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 6,
   },
   bracketBody:     { flexDirection: 'row' },
-  bracketArm:      { width: 20, minHeight: 36 },
+  bracketArm:      { width: 20 },
   bracketInnerCol: { flex: 1 },
-  bracketInnerTab: { width: TAB_W, height: TAB_H, borderBottomLeftRadius: 6, borderBottomRightRadius: 6 },
-  bracketInner:    { flex: 1, paddingVertical: 6, paddingLeft: 8 },
-  bracketSlot:     { height: 36, borderRadius: 8, borderWidth: 2, borderStyle: 'dashed', opacity: 0.4 },
+  bracketInnerTab: {
+    marginLeft: TAB_OFFSET,            // aligns with block indent (left: TAB_OFFSET)
+    width: TAB_W, height: TAB_H,
+    borderBottomLeftRadius: 6, borderBottomRightRadius: 6,
+    zIndex: 5,                         // renders on top of first inner block's indent
+  },
+  bracketInner:    { flex: 1 },        // no vertical padding — blocks connect flush
+  bracketSlot: {
+    // Height = default block height (58) minus TAB_H overlap = one block fits exactly
+    height: 49,
+    marginLeft: 8,
+    marginVertical: 4,
+    borderRadius: 8, borderWidth: 2, borderStyle: 'dashed', opacity: 0.4,
+  },
   bracketBottom: {
     position: 'relative',
-    height: 28, borderBottomLeftRadius: BLOCK_R, borderBottomRightRadius: BLOCK_R,
+    height: TAB_H + 20,               // indent (TAB_H) + return arrow row (20)
+    borderBottomLeftRadius: BLOCK_R, borderBottomRightRadius: BLOCK_R,
     alignItems: 'center', justifyContent: 'center',
   },
   returnArrow: { color: 'rgba(255,255,255,0.55)', fontSize: 14 },

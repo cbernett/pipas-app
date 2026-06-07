@@ -423,12 +423,14 @@ export default function Workspace() {
         >
           <View ref={canvasRef} nativeID="workspace-canvas" style={styles.canvas}>
 
-            {/* Guide message — always visible, top-left */}
-            <View style={styles.guideMessage} pointerEvents="none">
-              <Text style={styles.guideText}>
-                Para iniciar conecta a placa e arrasta blocos da biblioteca para criar o seu programa.
-              </Text>
-            </View>
+            {/* Guide message — hidden once first block is placed */}
+            {stacks.length === 0 && (
+              <View style={styles.guideMessage} pointerEvents="none">
+                <Text style={styles.guideText}>
+                  Para iniciar conecta a placa e arrasta blocos da biblioteca para criar o seu programa.
+                </Text>
+              </View>
+            )}
 
             {/* Snap preview ghost — workspace drag or library drag */}
             {snapPreviewPos && (draggingStack ?? libDragBlock) && (

@@ -11,46 +11,41 @@ export default function AppHeader() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Single row: logo | tabs | actions — all bottom-aligned */}
       <View style={styles.row}>
-        {/* Left spacer */}
-        <View style={styles.side} />
+        <Image
+          source={require('../../assets/pipas_loog_app_header.png')}
+          style={styles.logoImage}
+          resizeMode="contain"
+        />
 
-        {/* Logo — centered (replace icon.png with your logo file) */}
-        <View style={styles.logoContainer}>
-          <Image
-            source={require('../../assets/pipas_loog_app_header.png')}
-            style={styles.logoImage}
-            resizeMode="contain"
-          />
+        {/* Tabs sit flush at the bottom of the row */}
+        <View style={styles.tabs}>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'codigo' && styles.tabActive]}
+            onPress={() => setActiveTab('codigo')}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.tabText, activeTab === 'codigo' && styles.tabTextActive]}>
+              Código
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'sons' && styles.tabActive]}
+            onPress={() => setActiveTab('sons')}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.tabText, activeTab === 'sons' && styles.tabTextActive]}>
+              Sons
+            </Text>
+          </TouchableOpacity>
         </View>
 
-        {/* Right: stop button (during execution) + board status */}
-        <View style={[styles.side, styles.sideRight]}>
+        {/* Right actions — bottom-aligned with the tabs */}
+        <View style={styles.actions}>
           <RunButton />
           <BoardStatusButton />
         </View>
-      </View>
-
-      {/* Tabs */}
-      <View style={styles.tabs}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'codigo' && styles.tabActive]}
-          onPress={() => setActiveTab('codigo')}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.tabText, activeTab === 'codigo' && styles.tabTextActive]}>
-            Código
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'sons' && styles.tabActive]}
-          onPress={() => setActiveTab('sons')}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.tabText, activeTab === 'sons' && styles.tabTextActive]}>
-            Sons
-          </Text>
-        </TouchableOpacity>
       </View>
     </View>
   );
@@ -64,35 +59,22 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingTop: 12,
-    paddingBottom: 2,
-  },
-  side: {
-    flex: 1,
-    alignItems: 'flex-start',
-  },
-  sideRight: {
     alignItems: 'flex-end',
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 6,
-  },
-  logoContainer: {
-    flex: 2,
-    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingTop: 16,
   },
   logoImage: {
-    width: 120,
-    height: 38,
+    width: 160,
+    height: 52,
+    marginRight: 8,
+    marginBottom: 4,
   },
   tabs: {
+    flex: 1,
     flexDirection: 'row',
-    paddingHorizontal: 16,
   },
   tab: {
-    paddingHorizontal: 18,
+    paddingHorizontal: 14,
     paddingVertical: 9,
     marginRight: 2,
     borderBottomWidth: 3,
@@ -108,5 +90,11 @@ const styles = StyleSheet.create({
   },
   tabTextActive: {
     color: '#FFF',
+  },
+  actions: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 6,
+    paddingBottom: 6,
   },
 });

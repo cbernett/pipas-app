@@ -16,13 +16,15 @@ function isTouchEvent(b: WorkspaceBlock) {
 }
 
 export default function Workspace() {
-  const { stacks, setStacks, activeBlockId, usbDisconnectedWhileRunning, tapBlock, triggerScript } = useApp();
+  const { stacks, setStacks, addStack, activeBlockId, usbDisconnectedWhileRunning, tapBlock, triggerScript } = useApp();
   const displayStacks = stacks;
 
   // ── Drag/snap state ─────────────────────────────────────────────────────
   const [draggingId,    setDraggingId]    = useState<string | null>(null);
   const [snapTargetId,  setSnapTargetId]  = useState<string | null>(null);
   const [snapPreviewPos, setSnapPreviewPos] = useState<{ x: number; y: number } | null>(null);
+  // Library drag ghost block (for snap preview when dragging from library)
+  const [libDragBlock, setLibDragBlock]   = useState<WorkspaceBlock | null>(null);
   const dragAnimX = useRef(new Animated.Value(0)).current;
   const dragAnimY = useRef(new Animated.Value(0)).current;
 
@@ -41,6 +43,8 @@ export default function Workspace() {
   const blockHeightsRef = useRef<Record<string, number[]>>({});        // [block heights] per stack
   const canvasRef       = useRef<any>(null);
   const scrollOffset    = useRef({ x: 0, y: 0 });
+  const addStackRef     = useRef(addStack);
+  useEffect(() => { addStackRef.current = addStack; }, [addStack]);
 
   useEffect(() => { localStacksRef.current = displayStacks; }, [displayStacks]);
 
@@ -300,13 +304,72 @@ export default function Workspace() {
       hasMovedRef.current = false;
     };
 
+    // ── Library drag integration ─────────────────────────────────────────
+    const onLibMove = (e: Event) => {
+      const { clientX, clientY, block } = (e as CustomEvent).detail as { clientX: number; clientY: number; block: WorkspaceBlock };
+      const pos = toCanvas(clientX, clientY);
+      const tempStack: BlockStack = { id: '__lib__', x: pos.x, y: pos.y, blocks: [block] };
+      const snap = findSnap(tempStack, pos.x, pos.y);
+      setLibDragBlock(block);
+      setSnapTargetId(snap?.id ?? null);
+      setSnapPreviewPos(snap
+        ? { x: localStacksRef.current.find(s => s.id === snap.id)?.x ?? pos.x, y: snap.y }
+        : null);
+    };
+
+    const onLibDrop = (e: Event) => {
+      const { clientX, clientY, block } = (e as CustomEvent).detail as { clientX: number; clientY: number; block: WorkspaceBlock };
+      const pos  = toCanvas(clientX, clientY);
+      const tempStack: BlockStack = { id: '__lib__', x: pos.x, y: pos.y, blocks: [block] };
+      const snap        = findSnap(tempStack, pos.x, pos.y);
+      const bracketSnap = !snap ? findBracketSnap(tempStack, pos.x, pos.y) : null;
+      const wsBlock: WorkspaceBlock = { ...block, id: `ws_${Date.now()}_${block.id}` };
+      const stks = localStacksRef.current;
+
+      if (snap) {
+        const next = stks.map(s => {
+          if (s.id !== snap.id) return s;
+          const merged = [...s.blocks];
+          merged.splice(snap.insertAt, 0, wsBlock);
+          return { ...s, blocks: merged };
+        });
+        localStacksRef.current = next;
+        setStacks(next);
+      } else if (bracketSnap) {
+        const next = stks.map(s => s.id === bracketSnap.stackId
+          ? { ...s, blocks: s.blocks.map(b => b.id === bracketSnap.bracketBlockId
+              ? { ...b, innerBlocks: [...(b.innerBlocks ?? []), wsBlock] } : b) }
+          : s);
+        localStacksRef.current = next;
+        setStacks(next);
+      } else {
+        addStackRef.current(wsBlock, Math.max(10, pos.x - 60), Math.max(10, pos.y - 30));
+      }
+
+      setLibDragBlock(null);
+      setSnapTargetId(null);
+      setSnapPreviewPos(null);
+    };
+
+    const onLibEnd = () => {
+      setLibDragBlock(null);
+      setSnapTargetId(null);
+      setSnapPreviewPos(null);
+    };
+
     document.addEventListener('pointerdown', onDown);
     document.addEventListener('pointermove', onMove);
     document.addEventListener('pointerup',   onUp);
+    document.addEventListener('pipas:libdrag:move', onLibMove);
+    document.addEventListener('pipas:libdrag:drop', onLibDrop);
+    document.addEventListener('pipas:libdrag:end',  onLibEnd);
     return () => {
       document.removeEventListener('pointerdown', onDown);
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup',   onUp);
+      document.removeEventListener('pipas:libdrag:move', onLibMove);
+      document.removeEventListener('pipas:libdrag:drop', onLibDrop);
+      document.removeEventListener('pipas:libdrag:end',  onLibEnd);
     };
   }, [stackAt, blockIdxAt, accumHeight, findSnap, findBracketSnap, setStacks, dragAnimX, dragAnimY]);
 
@@ -379,11 +442,11 @@ export default function Workspace() {
               </View>
             )}
 
-            {/* Snap preview ghost */}
-            {snapPreviewPos && draggingStack && (
+            {/* Snap preview ghost — workspace drag or library drag */}
+            {snapPreviewPos && (draggingStack ?? libDragBlock) && (
               <View style={[styles.snapGhost, { left: snapPreviewPos.x, top: snapPreviewPos.y }]}>
-                {draggingStack.blocks.map((b, bi) => (
-                  <CodeBlock key={b.id} block={b} isFirst={bi === 0} isLast={bi === draggingStack.blocks.length - 1} preview />
+                {(draggingStack ? draggingStack.blocks : [libDragBlock!]).map((b, bi, arr) => (
+                  <CodeBlock key={b.id} block={b} isFirst={bi === 0} isLast={bi === arr.length - 1} preview />
                 ))}
               </View>
             )}

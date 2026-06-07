@@ -35,6 +35,9 @@ function LibraryBlockItem({ block, addStack }: { block: BlockDef; addStack: (b: 
       let hasMoved = false;
       let ghost: HTMLElement | null = null;
 
+      const dispatch = (name: string, extra: object) =>
+        document.dispatchEvent(new CustomEvent(name, { detail: extra }));
+
       const onMove = (ev: PointerEvent) => {
         const d = Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY);
         if (!hasMoved && d > DRAG_MIN) {
@@ -61,6 +64,9 @@ function LibraryBlockItem({ block, addStack }: { block: BlockDef; addStack: (b: 
           ghost.style.left = `${ev.clientX - 60}px`;
           ghost.style.top  = `${ev.clientY - 22}px`;
         }
+        if (hasMoved) {
+          dispatch('pipas:libdrag:move', { clientX: ev.clientX, clientY: ev.clientY, block: wsBlock });
+        }
       };
 
       const onUp = (ev: PointerEvent) => {
@@ -69,21 +75,10 @@ function LibraryBlockItem({ block, addStack }: { block: BlockDef; addStack: (b: 
         if (ghost) { document.body.removeChild(ghost); ghost = null; }
 
         if (hasMoved) {
-          const canvas = document.getElementById('workspace-canvas');
-          if (canvas) {
-            const rect   = canvas.getBoundingClientRect();
-            const scroll = (window as any).__workspaceScroll ?? { x: 0, y: 0 };
-            const cx = ev.clientX - rect.left  + scroll.x;
-            const cy = ev.clientY - rect.top   + scroll.y;
-            if (cx > 0 && cy > 0 && cx < 2200 && cy < 1800) {
-              addStack(wsBlock, Math.max(10, cx - 60), Math.max(10, cy - 30));
-              return;
-            }
-          }
-          // dropped outside canvas — place at default random position
-          addStack(wsBlock, 40 + Math.random() * 80, 40 + Math.random() * 80);
+          // Workspace handles the snap-merge or plain add via event
+          dispatch('pipas:libdrag:drop', { clientX: ev.clientX, clientY: ev.clientY, block: wsBlock });
         } else {
-          // tap — add at default position
+          // Tap — add at a visible default position
           addStack(wsBlock, 40 + Math.random() * 80, 40 + Math.random() * 80);
         }
       };

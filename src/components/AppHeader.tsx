@@ -3,7 +3,6 @@ import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../context/AppContext';
 import BoardStatusButton from './BoardStatusButton';
-import RunButton from './RunButton';
 
 export default function AppHeader() {
   const { activeTab, setActiveTab } = useApp();
@@ -43,9 +42,8 @@ export default function AppHeader() {
           />
         </View>
 
-        {/* Right: connect + stop */}
+        {/* Right: connect button */}
         <View style={styles.actions}>
-          <RunButton />
           <BoardStatusButton />
         </View>
       </View>

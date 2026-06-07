@@ -6,7 +6,6 @@ import { EXAMPLE_STACKS } from '../data/blocks';
 
 const CANVAS_W   = 2200;
 const CANVAS_H   = 1800;
-const DOTS       = 24;
 const SNAP_D     = 56;   // snap detection radius in px
 const DRAG_MIN   = 8;    // min movement to activate drag
 
@@ -314,7 +313,6 @@ export default function Workspace() {
           onScroll={e => { scrollOffset.current.y = e.nativeEvent.contentOffset.y; }}
         >
           <View ref={canvasRef} style={styles.canvas}>
-            <DotGrid />
 
             {/* Snap preview ghost */}
             {snapPreviewPos && draggingStack && (
@@ -373,27 +371,10 @@ export default function Workspace() {
   );
 }
 
-function DotGrid() {
-  const cols = Math.ceil(CANVAS_W / DOTS);
-  const rows = Math.ceil(CANVAS_H / DOTS);
-  const dots: React.ReactNode[] = [];
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      dots.push(
-        <View key={`${r}-${c}`} style={[styles.dot, { top: r * DOTS + 12, left: c * DOTS + 12 }]} />
-      );
-    }
-  }
-  return <>{dots}</>;
-}
 
 const styles = StyleSheet.create({
   root:   { flex: 1, backgroundColor: '#1A1F2E' },
   canvas: { width: CANVAS_W, height: CANVAS_H, position: 'relative' },
-  dot: {
-    position: 'absolute', width: 3, height: 3, borderRadius: 1.5,
-    backgroundColor: 'rgba(255,255,255,0.07)',
-  },
 
   stackPos: { position: 'absolute' },
 

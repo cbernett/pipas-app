@@ -1,15 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, Platform,
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  Platform, Modal,
 } from 'react-native';
 import { WorkspaceBlock } from '../context/AppContext';
-import { BLOCK_TEMPLATES, CATEGORY_DARK, BlockParamDef } from '../data/blocks';
+import { BLOCK_TEMPLATES, BlockParamDef } from '../data/blocks';
 
-export const TAB_W      = 36;   // connector width
-export const TAB_H      = 12;   // connector height
-export const TAB_OFFSET = 20;   // horizontal offset from block left edge
-const BLOCK_R           = 18;   // body corner radius — pill-like
-const CIRCLE_D          = 50;   // event-block circle diameter
+export const TAB_W      = 36;
+export const TAB_H      = 12;
+export const TAB_OFFSET = 20;
+const BLOCK_R           = 18;
+const WS_BG             = '#1A1F2E';  // workspace background = indent colour
 
 const BRACKET_DEFIDS = ['ctrl_2', 'ctrl_3', 'ctrl_4'];
 
@@ -35,7 +36,7 @@ export default function CodeBlock(props: Props) {
   return                <StackBlock   {...props} parts={parts} />;
 }
 
-// ─── Event block — OctoStudio "key" shape ─────────────────────────────────
+// ─── Event block — seamless pill with circular left end ──────────────────────
 
 function EventBlock({ block, preview, isDragging, isActive, onEventTap, onBlockTap, parts }: Props & { parts: any[] }) {
   const body = (
@@ -49,24 +50,12 @@ function EventBlock({ block, preview, isDragging, isActive, onEventTap, onBlockT
   );
 
   return (
-    <View style={styles.eventWrapper}>
-      <View style={styles.eventRow}>
-        {/* Circular cap — the key "head", no icon inside */}
-        <TouchableOpacity
-          style={[styles.eventCircle, { backgroundColor: block.color }]}
-          onPress={onEventTap ?? onBlockTap}
-          activeOpacity={0.82}
-        />
-
-        {/* Body — overlaps circle slightly on the left */}
-        {(onEventTap || onBlockTap) && !preview ? (
-          <TouchableOpacity onPress={onEventTap ?? onBlockTap} activeOpacity={0.82} style={{ flexShrink: 0 }}>
-            {body}
-          </TouchableOpacity>
-        ) : body}
-      </View>
-
-      {/* Bottom connector tab — always visible so blocks can always connect below */}
+    <View style={styles.wrapper}>
+      {(onEventTap || onBlockTap) && !preview ? (
+        <TouchableOpacity onPress={onEventTap ?? onBlockTap} activeOpacity={0.82}>
+          {body}
+        </TouchableOpacity>
+      ) : body}
       {!preview && (
         <View style={styles.tabRow}>
           <View style={[styles.tab, { backgroundColor: block.color }]} />
@@ -76,25 +65,18 @@ function EventBlock({ block, preview, isDragging, isActive, onEventTap, onBlockT
   );
 }
 
-// ─── Stack block ──────────────────────────────────────────────────────────
+// ─── Stack block ──────────────────────────────────────────────────────────────
 
 function StackBlock({ block, preview, isDragging, isActive, onEventTap, onBlockTap, parts }: Props & { parts: any[] }) {
-  const darkColor = CATEGORY_DARK[block.category as keyof typeof CATEGORY_DARK] ?? '#000';
   const body = (
     <View style={[
       styles.body, { backgroundColor: block.color },
       isDragging && styles.bodyDragging,
       isActive   && styles.bodyActive,
     ]}>
-      {/* Inset indent slot */}
-      {!preview && (
-        <View style={[styles.insetIndent, { backgroundColor: darkColor }]} />
-      )}
+      {/* Indent slot: workspace-bg coloured so tab from above fills it */}
+      {!preview && <View style={styles.indent} />}
       <BlockLabel parts={parts} />
-      {/* Subtle bottom separator — visible as a thin line between connected blocks */}
-      {!preview && (
-        <View style={styles.separator} />
-      )}
     </View>
   );
 
@@ -105,25 +87,34 @@ function StackBlock({ block, preview, isDragging, isActive, onEventTap, onBlockT
           {body}
         </TouchableOpacity>
       ) : body}
-
-      {/* Bottom tab — always shown so blocks can always receive a connection below */}
       {!preview && (
         <View style={styles.tabRow}>
-          <View style={[styles.tab, { backgroundColor: block.color }]} />
+          <Tab color={block.color} />
         </View>
       )}
     </View>
   );
 }
 
-// ─── Bracket / C-block ────────────────────────────────────────────────────
+// ─── Tab with inner shadow (appears recessed into the indent) ─────────────────
+
+function Tab({ color }: { color: string }) {
+  return (
+    <View style={[styles.tab, { backgroundColor: color }]}>
+      {/* Inner shadow at top edge — makes the tab look sunken into the slot */}
+      <View style={styles.tabInnerShadow} />
+    </View>
+  );
+}
+
+// ─── Bracket / C-block ────────────────────────────────────────────────────────
 
 function BracketBlock({ block, preview, isActive, parts }: Props & { parts: any[] }) {
   const inner = block.innerBlocks ?? [];
   return (
     <View style={styles.wrapper}>
       <View style={[styles.bracketTop, { backgroundColor: block.color }, isActive && styles.bodyActive]}>
-        {!preview && <View style={[styles.insetIndent, { backgroundColor: CATEGORY_DARK[block.category as keyof typeof CATEGORY_DARK] ?? '#000' }]} />}
+        {!preview && <View style={styles.indent} />}
         <BlockLabel parts={parts} />
       </View>
       <View style={styles.bracketBody}>
@@ -142,14 +133,14 @@ function BracketBlock({ block, preview, isActive, parts }: Props & { parts: any[
       </View>
       {!preview && (
         <View style={styles.tabRow}>
-          <View style={[styles.tab, { backgroundColor: block.color }]} />
+          <Tab color={block.color} />
         </View>
       )}
     </View>
   );
 }
 
-// ─── Label renderer ───────────────────────────────────────────────────────
+// ─── Label renderer ───────────────────────────────────────────────────────────
 
 function BlockLabel({ parts }: { parts: Array<string | BlockParamDef> }) {
   return (
@@ -168,37 +159,68 @@ function NumberBubble({ value }: { value: string }) {
   const w = Math.max(32, val.length * 12 + 16);
   return (
     <View style={[styles.numBubble, { width: w }]}>
-      <TextInput style={styles.numInput} value={val} onChangeText={setVal} keyboardType="numeric" selectTextOnFocus />
+      <TextInput
+        style={styles.numInput} value={val} onChangeText={setVal}
+        keyboardType="numeric" selectTextOnFocus
+      />
     </View>
   );
 }
 
 function DropdownBubble({ value, options }: { value: string; options?: string[] }) {
-  const [val, setVal] = useState(value);
+  const [val, setVal]   = useState(value);
+  const [open, setOpen] = useState(false);
+  const [pos, setPos]   = useState({ x: 0, y: 0 });
+  const ref = useRef<View>(null);
   const opts = options ?? [value];
+
+  const handleOpen = () => {
+    ref.current?.measureInWindow((x, y, _w, h) => {
+      setPos({ x, y: y + h + 4 });
+      setOpen(true);
+    });
+  };
+
   return (
-    <TouchableOpacity
-      style={styles.dropBubble}
-      onPress={() => setVal(opts[(opts.indexOf(val) + 1) % opts.length])}
-      activeOpacity={0.8}
-    >
-      <Text style={styles.dropText}>{val}</Text>
-      <Text style={styles.dropChevron}>▾</Text>
-    </TouchableOpacity>
+    <View ref={ref}>
+      <TouchableOpacity style={styles.dropBubble} onPress={handleOpen} activeOpacity={0.8}>
+        <Text style={styles.dropText}>{val}</Text>
+        <Text style={styles.dropChevron}>▾</Text>
+      </TouchableOpacity>
+
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <TouchableOpacity style={styles.dropOverlay} onPress={() => setOpen(false)} activeOpacity={1}>
+          <View style={[styles.dropMenu, { top: pos.y, left: pos.x }]}>
+            {opts.map(opt => (
+              <TouchableOpacity
+                key={opt}
+                style={[styles.dropOption, opt === val && styles.dropOptionActive]}
+                onPress={() => { setVal(opt); setOpen(false); }}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.dropOptionText, opt === val && styles.dropOptionTextActive]}>
+                  {opt}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    </View>
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  wrapper:      { alignSelf: 'flex-start' },
+  wrapper: { alignSelf: 'flex-start' },
 
-  // ── Inset indent — sits inside the body at top-left, covered by tab from above
-  // backgroundColor is set dynamically (CATEGORY_DARK of the block)
-  insetIndent: {
+  // ── Indent: workspace-bg colour so the tab from above "fills" the void
+  indent: {
     position: 'absolute',
     top: 0, left: TAB_OFFSET,
     width: TAB_W, height: TAB_H,
+    backgroundColor: WS_BG,
     borderBottomLeftRadius: 6, borderBottomRightRadius: 6,
   },
 
@@ -207,12 +229,11 @@ const styles = StyleSheet.create({
     position: 'relative',
     flexDirection: 'row', alignItems: 'center',
     paddingTop: TAB_H + 8,
-    paddingBottom: 10,
-    paddingHorizontal: 16,
+    paddingBottom: 10, paddingHorizontal: 16,
     borderRadius: BLOCK_R,
     gap: 6,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.22, shadowRadius: 4, elevation: 4,
+    shadowOpacity: 0.2, shadowRadius: 4, elevation: 4,
   },
   bodyDragging: { shadowOpacity: 0.5, shadowRadius: 14, elevation: 14 },
   bodyActive: {
@@ -220,55 +241,38 @@ const styles = StyleSheet.create({
     shadowColor: '#FFF', shadowOpacity: 0.5, shadowRadius: 10,
   },
 
-  // ── Tab (male connector) — left-aligned, always rendered
+  // ── Tab + inner shadow (makes tab look recessed)
   tabRow: { paddingLeft: TAB_OFFSET },
   tab: {
     width: TAB_W, height: TAB_H,
     borderBottomLeftRadius: 6, borderBottomRightRadius: 6,
+    overflow: 'hidden',
   },
-
-  // ── Subtle separator line at bottom of block body (shows between connected blocks)
-  separator: {
+  tabInnerShadow: {
     position: 'absolute',
-    bottom: 0, left: 0, right: 0,
-    height: 1.5,
+    top: 0, left: 0, right: 0,
+    height: 4,
     backgroundColor: 'rgba(0,0,0,0.18)',
-    borderBottomLeftRadius: BLOCK_R,
-    borderBottomRightRadius: BLOCK_R,
   },
 
-  // ── Event block (key shape) ───────────────────────────────────────────
-  eventWrapper: { alignSelf: 'flex-start' },
-  eventRow: { flexDirection: 'row', alignItems: 'center' },
-
-  eventCircle: {
-    width: CIRCLE_D, height: CIRCLE_D,
-    borderRadius: CIRCLE_D / 2,
-    zIndex: 2,
-    // Sits above the body so they merge visually
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25, shadowRadius: 5, elevation: 5,
-  },
+  // ── Event block — ONE seamless shape: left side is circular, right is rounded
   eventBody: {
-    position: 'relative',
     flexDirection: 'row', alignItems: 'center',
-    // 50% overlap — circle center aligns with body left edge (OctoStudio exact)
-    marginLeft: -(CIRCLE_D / 2),
-    paddingLeft: CIRCLE_D / 2 + 10,
-    paddingRight: 16,
-    paddingVertical: 11,
-    minHeight: CIRCLE_D,
+    // Very large left radius → left side becomes a perfect circle at any height
+    borderTopLeftRadius: 999, borderBottomLeftRadius: 999,
     borderTopRightRadius: BLOCK_R, borderBottomRightRadius: BLOCK_R,
-    borderTopLeftRadius: BLOCK_R / 2, borderBottomLeftRadius: BLOCK_R / 2,
-    zIndex: 1, gap: 6,
+    paddingLeft: 32,   // pushes content past the circular curve
+    paddingRight: 16,
+    paddingVertical: 10,
+    gap: 6,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.18, shadowRadius: 4, elevation: 3,
+    shadowOpacity: 0.2, shadowRadius: 4, elevation: 4,
   },
 
-  // ── Bracket ────────────────────────────────────────────────────────────
+  // ── Bracket
   bracketTop: {
     position: 'relative',
-    paddingTop: TAB_H + 7, paddingBottom: 9, paddingHorizontal: 14,
+    paddingTop: TAB_H + 8, paddingBottom: 10, paddingHorizontal: 16,
     borderTopLeftRadius: BLOCK_R, borderTopRightRadius: BLOCK_R,
     flexDirection: 'row', alignItems: 'center', gap: 6,
   },
@@ -282,7 +286,7 @@ const styles = StyleSheet.create({
   },
   returnArrow: { color: 'rgba(255,255,255,0.55)', fontSize: 14 },
 
-  // ── Label ───────────────────────────────────────────────────────────────
+  // ── Label
   labelRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 5, flexShrink: 1 },
   labelText: { color: '#FFF', fontSize: 14, fontWeight: '700' },
 
@@ -291,12 +295,47 @@ const styles = StyleSheet.create({
     color: '#1A1A2E', fontSize: 14, fontWeight: '700', textAlign: 'center',
     paddingVertical: Platform.OS === 'ios' ? 3 : 1, paddingHorizontal: 4,
   },
+
+  // ── Dropdown bubble
   dropBubble: {
     backgroundColor: '#FFF', borderRadius: 6,
     paddingHorizontal: 7, paddingVertical: 4,
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    flexShrink: 0,
+    flexDirection: 'row', alignItems: 'center', gap: 3, flexShrink: 0,
   },
   dropText:    { color: '#1A1A2E', fontSize: 13, fontWeight: '700' },
   dropChevron: { color: '#666', fontSize: 10 },
+
+  // ── Dropdown modal menu
+  dropOverlay: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  dropMenu: {
+    position: 'absolute',
+    backgroundColor: '#FFF',
+    borderRadius: 10,
+    overflow: 'hidden',
+    minWidth: 140,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 20,
+  },
+  dropOption: {
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  dropOptionActive: {
+    backgroundColor: '#F0EEFF',
+  },
+  dropOptionText: {
+    fontSize: 14, fontWeight: '600', color: '#1A1A2E',
+  },
+  dropOptionTextActive: {
+    color: '#6B4FBB',
+    fontWeight: '700',
+  },
 });

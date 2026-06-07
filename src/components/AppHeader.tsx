@@ -102,7 +102,7 @@ const styles = StyleSheet.create({
   logoImage: {
     width: 160,
     height: 52,
-    marginBottom: 4,
+    marginBottom: 12,
   },
 
   // Right — bottom-aligned actions
@@ -112,6 +112,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     alignItems: 'flex-end',
     gap: 6,
-    paddingBottom: 6,
+    paddingBottom: 16,
   },
 });

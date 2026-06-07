@@ -7,7 +7,7 @@ import { WorkspaceBlock } from '../context/AppContext';
 import { BLOCK_TEMPLATES, BlockParamDef } from '../data/blocks';
 
 export const TAB_W      = 36;
-export const TAB_H      = 12;
+export const TAB_H      = 9;   // reduced — indent is less deep
 export const TAB_OFFSET = 20;
 const BLOCK_R           = 18;
 const WS_BG             = '#1A1F2E';  // workspace background = indent colour
@@ -224,55 +224,49 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 6, borderBottomRightRadius: 6,
   },
 
-  // ── Stack block body
+  // ── Stack block body — flat, no drop shadow so tab stays seamless
   body: {
     position: 'relative',
     flexDirection: 'row', alignItems: 'center',
-    paddingTop: TAB_H + 8,
-    paddingBottom: 10, paddingHorizontal: 16,
+    paddingTop: TAB_H + 6,
+    paddingBottom: 8, paddingHorizontal: 16,
     borderRadius: BLOCK_R,
     gap: 6,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2, shadowRadius: 4, elevation: 4,
+    // No vertical shadow — would create a visible line between body and tab
+    shadowColor: '#000', shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.15, shadowRadius: 3, elevation: 2,
   },
-  bodyDragging: { shadowOpacity: 0.5, shadowRadius: 14, elevation: 14 },
+  bodyDragging: { shadowOpacity: 0.4, shadowRadius: 12, elevation: 10 },
   bodyActive: {
     borderWidth: 2.5, borderColor: 'rgba(255,255,255,0.9)',
     shadowColor: '#FFF', shadowOpacity: 0.5, shadowRadius: 10,
   },
 
-  // ── Tab + inner shadow (makes tab look recessed)
+  // ── Tab — no inner shadow, pure colour so it's seamless with the body
   tabRow: { paddingLeft: TAB_OFFSET },
   tab: {
     width: TAB_W, height: TAB_H,
     borderBottomLeftRadius: 6, borderBottomRightRadius: 6,
-    overflow: 'hidden',
   },
-  tabInnerShadow: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0,
-    height: 4,
-    backgroundColor: 'rgba(0,0,0,0.18)',
-  },
+  tabInnerShadow: {},  // unused — kept to avoid TS errors on Tab component
 
-  // ── Event block — ONE seamless shape: left side is circular, right is rounded
+  // ── Event block — full pill: both sides are circular (radius 999)
   eventBody: {
     flexDirection: 'row', alignItems: 'center',
-    // Very large left radius → left side becomes a perfect circle at any height
     borderTopLeftRadius: 999, borderBottomLeftRadius: 999,
-    borderTopRightRadius: BLOCK_R, borderBottomRightRadius: BLOCK_R,
-    paddingLeft: 32,   // pushes content past the circular curve
-    paddingRight: 16,
+    borderTopRightRadius: 999, borderBottomRightRadius: 999,
+    paddingLeft: 32,
+    paddingRight: 20,
     paddingVertical: 10,
     gap: 6,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2, shadowRadius: 4, elevation: 4,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.15, shadowRadius: 3, elevation: 2,
   },
 
   // ── Bracket
   bracketTop: {
     position: 'relative',
-    paddingTop: TAB_H + 8, paddingBottom: 10, paddingHorizontal: 16,
+    paddingTop: TAB_H + 6, paddingBottom: 8, paddingHorizontal: 16,
     borderTopLeftRadius: BLOCK_R, borderTopRightRadius: BLOCK_R,
     flexDirection: 'row', alignItems: 'center', gap: 6,
   },

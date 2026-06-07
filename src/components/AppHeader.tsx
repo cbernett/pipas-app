@@ -62,7 +62,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     paddingHorizontal: 12,
     paddingTop: 28,
-    paddingBottom: 10,
+    paddingBottom: 0,   // tab underlines flush with workspace border
   },
 
   // Left — tabs flush to bottom
@@ -72,13 +72,14 @@ const styles = StyleSheet.create({
   },
   tab: {
     paddingHorizontal: 14,
-    paddingVertical: 9,
+    paddingTop: 4,
+    paddingBottom: 16,  // pushes text up to align with logo & connect button
     marginRight: 2,
     borderBottomWidth: 3,
     borderBottomColor: 'transparent',
   },
   tabActive: {
-    borderBottomColor: '#7C5CBF',
+    borderBottomColor: '#FFF',
   },
   tabText: {
     fontSize: 14,

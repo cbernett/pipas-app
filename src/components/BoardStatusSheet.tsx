@@ -10,7 +10,7 @@ export default function BoardStatusSheet() {
   const {
     boardSheetOpen, setBoardSheetOpen,
     boardStatus, setBoardStatus,
-    activeBlockIndex, stopRun,
+    activeBlockId, stopRun,
     setUsbDisconnectedWhileRunning,
     simulateTouch,
   } = useApp();
@@ -59,7 +59,7 @@ export default function BoardStatusSheet() {
   const handleDisconnect = async () => {
     await board.disconnect();
     setBoardStatus('disconnected');
-    if (activeBlockIndex !== null) {
+    if (activeBlockId !== null) {
       stopRun();
       setUsbDisconnectedWhileRunning(true);
     }

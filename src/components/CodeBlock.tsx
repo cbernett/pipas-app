@@ -63,20 +63,13 @@ export default function CodeBlock({
         </View>
       )}
 
-      {/* Notch slot — very subtle indent at top of non-hat, non-first blocks */}
-      {!isEvent && !isFirst && !preview && (
-        <View style={styles.slotRow}>
-          <View style={[styles.slot, { backgroundColor: darkColor }]} />
-        </View>
-      )}
-
       {(onEventTap || onBlockTap) && !preview ? (
         <TouchableOpacity onPress={onEventTap ?? onBlockTap} activeOpacity={0.82}>
           {body}
         </TouchableOpacity>
       ) : body}
 
-      {/* Tab connector at bottom */}
+      {/* Tab connector — left-aligned, bottom of block */}
       {!isLast && !preview && (
         <View style={styles.tabRow}>
           <View style={[styles.tab, { backgroundColor: block.color }]} />
@@ -196,9 +189,9 @@ const styles = StyleSheet.create({
   body: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 18,
-    minHeight: 56,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    minHeight: 46,
     borderRadius: R,
     gap: 8,
     shadowColor: '#000',
@@ -233,8 +226,8 @@ const styles = StyleSheet.create({
     marginLeft: 2,
   },
 
-  // Tab (male connector)
-  tabRow: { alignItems: 'center' },
+  // Tab (male connector) — left-aligned, ~16px from left edge
+  tabRow: { paddingLeft: 16 },
   tab: {
     width: TAB_W, height: TAB_H,
     borderBottomLeftRadius: 8, borderBottomRightRadius: 8,
@@ -243,9 +236,9 @@ const styles = StyleSheet.create({
   // ── Bracket block ──────────────────────────
   bracketWrapper: { alignSelf: 'flex-start', minWidth: 180 },
   bracketTop: {
-    paddingVertical: 14, paddingHorizontal: 18,
+    paddingVertical: 10, paddingHorizontal: 16,
     borderTopLeftRadius: R, borderTopRightRadius: R,
-    flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 56,
+    flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 46,
   },
   bracketBody: { flexDirection: 'row' },
   bracketArm:  { width: BRACKET_ARM_W, minHeight: 44 },

@@ -1,140 +1,171 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
-import {
-  View, ScrollView, Text, StyleSheet, Animated, LayoutChangeEvent,
-} from 'react-native';
-import { useApp, WorkspaceBlock } from '../context/AppContext';
-import CodeBlock from './CodeBlock';
-import { EXAMPLE_PROGRAM } from '../data/blocks';
+import { View, ScrollView, Text, StyleSheet, Animated } from 'react-native';
+import { useApp, WorkspaceBlock, BlockStack } from '../context/AppContext';
+import CodeBlock, { TAB_W, TAB_H } from './CodeBlock';
+import { EXAMPLE_STACKS, CATEGORY_COLORS } from '../data/blocks';
 
-const DOTS_SPACING  = 24;
-const TRASH_ZONE_H  = 72;
-const DRAG_THRESHOLD = 8; // px before drag activates
+const DOTS    = 24;
+const CANVAS_W = 2000;
+const CANVAS_H = 1600;
+const SNAP_D   = 50; // px — snap detection radius
+const TAB_OFFSET = 16; // left offset of bottom tab on each block
 
-function isTouchEventBlock(b: WorkspaceBlock) {
+function isTouchEvent(b: WorkspaceBlock) {
   return b.category === 'Eventos' ||
     b.defId === 'evt_touch_1' || b.defId === 'evt_touch_2' || b.defId === 'evt_touch_3' ||
-    b.defId === 'luz_1' || b.defId === 'luz_2' || b.defId === 'luz_3'; // backward compat
+    b.defId === 'luz_1' || b.defId === 'luz_2' || b.defId === 'luz_3';
 }
 
 export default function Workspace() {
   const {
-    workspaceBlocks, setWorkspaceBlocks,
-    activeBlockIndex,
+    stacks, setStacks,
+    activeBlockId,
     usbDisconnectedWhileRunning,
     tapBlock, triggerScript,
   } = useApp();
 
-  const displayBlocks    = workspaceBlocks.length > 0 ? workspaceBlocks : EXAMPLE_PROGRAM as WorkspaceBlock[];
-  const displayBlocksRef = useRef(displayBlocks);
-  useEffect(() => { displayBlocksRef.current = displayBlocks; }, [displayBlocks]);
+  const displayStacks = stacks.length > 0 ? stacks : EXAMPLE_STACKS;
 
-  // ── Drag visual state ────────────────────────────────────────────────────
-  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
-  const [dropIndex,     setDropIndex]     = useState<number | null>(null);
-  const [overTrash,     setOverTrash]     = useState(false);
-  const dragAnim = useRef(new Animated.Value(0)).current;
+  // ── Drag state ──────────────────────────────────────────────────────────
+  const [draggingId, setDraggingId]     = useState<string | null>(null);
+  const [snapTargetId, setSnapTargetId] = useState<string | null>(null);
+  const dragAnimX = useRef(new Animated.Value(0)).current;
+  const dragAnimY = useRef(new Animated.Value(0)).current;
 
-  // ── Layout tracking ──────────────────────────────────────────────────────
-  const itemLayouts     = useRef<{ y: number; height: number }[]>([]);
-  const scrollOffsetRef = useRef(0);
-  const containerRef    = useRef<any>(null);  // DOM element ref (web)
-  const containerYRef   = useRef(0);          // fallback for native
-  const containerHRef   = useRef(0);
+  // Refs for drag logic (avoid stale closures in event listeners)
+  const stacksRef        = useRef(displayStacks);
+  const draggingIdRef    = useRef<string | null>(null);
+  const startMouseRef    = useRef({ x: 0, y: 0 });
+  const startStackRef    = useRef({ x: 0, y: 0 });
+  const hasMovedRef      = useRef(false);
+  const draggedRecentRef = useRef(false);
+  const stackHeights     = useRef<Record<string, number>>({});
+  const canvasRef        = useRef<any>(null);
+  const scrollRef        = useRef<ScrollView>(null);
+  const scrollOffsetRef  = useRef({ x: 0, y: 0 });
 
-  // ── Flag: suppress tap handler if a drag just completed ─────────────────
-  const draggedRecentlyRef = useRef(false);
+  useEffect(() => { stacksRef.current = displayStacks; }, [displayStacks]);
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
-  const getContainerTop = useCallback(() => {
-    if (containerRef.current?.getBoundingClientRect) {
-      return containerRef.current.getBoundingClientRect().top;
+  // ── Snap helpers ────────────────────────────────────────────────────────
+  const getSnapReceptor = (stack: BlockStack) => ({
+    x: stack.x + TAB_OFFSET,
+    y: stack.y + (stackHeights.current[stack.id] ?? 200),
+  });
+
+  const findSnapTarget = useCallback((dragStack: BlockStack, newX: number, newY: number) => {
+    const emitterY = newY; // top of dragged stack
+    const emitterX = newX + TAB_OFFSET;
+
+    for (const s of stacksRef.current) {
+      if (s.id === dragStack.id) continue;
+      const rec = getSnapReceptor(s);
+      const dx = Math.abs(emitterX - rec.x);
+      const dy = Math.abs(emitterY - rec.y);
+      if (dx < SNAP_D && dy < SNAP_D) return s.id;
     }
-    return containerYRef.current;
+    return null;
   }, []);
 
-  const getDropIndex = useCallback((clientY: number): number => {
-    const relY = (clientY - getContainerTop()) + scrollOffsetRef.current;
-    for (let i = 0; i < itemLayouts.current.length; i++) {
-      const l = itemLayouts.current[i];
-      if (l && relY < l.y + l.height / 2) return i;
-    }
-    return itemLayouts.current.length;
-  }, [getContainerTop]);
-
-  const isOverTrashZone = useCallback((clientY: number) => {
-    const containerBottom = getContainerTop() + containerHRef.current;
-    return clientY > containerBottom - TRASH_ZONE_H;
-  }, [getContainerTop]);
-
-  const cancelDrag = useCallback(() => {
-    setDraggingIndex(null);
-    setDropIndex(null);
-    setOverTrash(false);
-    dragAnim.setValue(0);
-  }, [dragAnim]);
-
-  // ── Pointer-event drag system (web) ──────────────────────────────────────
+  // ── Pointer drag system ─────────────────────────────────────────────────
   useEffect(() => {
-    if (typeof document === 'undefined') return; // native: skip
+    if (typeof document === 'undefined') return;
 
-    let activeIdx: number | null = null;
-    let startY = 0;
-    let moved  = false;
+    let activeStackId: string | null = null;
+    let moved = false;
 
-    const getBlockAt = (clientY: number): number | null => {
-      const relY = (clientY - getContainerTop()) + scrollOffsetRef.current;
-      for (let i = 0; i < itemLayouts.current.length; i++) {
-        const l = itemLayouts.current[i];
-        if (l && relY >= l.y && relY < l.y + l.height) return i;
+    const getCanvasOffset = () => {
+      if (canvasRef.current?.getBoundingClientRect) {
+        const r = canvasRef.current.getBoundingClientRect();
+        return { x: r.left, y: r.top };
+      }
+      return { x: 0, y: 0 };
+    };
+
+    const getStackAt = (clientX: number, clientY: number): BlockStack | null => {
+      const off = getCanvasOffset();
+      const cx  = clientX - off.x + scrollOffsetRef.current.x;
+      const cy  = clientY - off.y + scrollOffsetRef.current.y;
+
+      // Check from top (last rendered = topmost) to bottom
+      for (let i = stacksRef.current.length - 1; i >= 0; i--) {
+        const s = stacksRef.current[i];
+        const h = stackHeights.current[s.id] ?? 200;
+        if (cx >= s.x && cx <= s.x + 300 && cy >= s.y && cy <= s.y + h) return s;
       }
       return null;
     };
 
     const onDown = (e: PointerEvent) => {
-      const idx = getBlockAt(e.clientY);
-      if (idx === null) return;
-      activeIdx = idx;
-      startY    = e.clientY;
-      moved     = false;
+      const stack = getStackAt(e.clientX, e.clientY);
+      if (!stack) return;
+      activeStackId = stack.id;
+      draggingIdRef.current = stack.id;
+      startMouseRef.current = { x: e.clientX, y: e.clientY };
+      startStackRef.current = { x: stack.x, y: stack.y };
+      moved = false;
+      dragAnimX.setValue(stack.x);
+      dragAnimY.setValue(stack.y);
     };
 
     const onMove = (e: PointerEvent) => {
-      if (activeIdx === null) return;
-      const dy = e.clientY - startY;
-      if (!moved && Math.abs(dy) > DRAG_THRESHOLD) {
+      if (!activeStackId) return;
+      const dx = e.clientX - startMouseRef.current.x;
+      const dy = e.clientY - startMouseRef.current.y;
+
+      if (!moved && Math.abs(dx) + Math.abs(dy) > 8) {
         moved = true;
-        setDraggingIndex(activeIdx);
+        setDraggingId(activeStackId);
       }
       if (!moved) return;
-      dragAnim.setValue(dy);
-      setOverTrash(isOverTrashZone(e.clientY));
-      setDropIndex(isOverTrashZone(e.clientY) ? null : getDropIndex(e.clientY));
+
+      const newX = startStackRef.current.x + dx;
+      const newY = startStackRef.current.y + dy;
+      dragAnimX.setValue(newX);
+      dragAnimY.setValue(newY);
+
+      const dragStack = stacksRef.current.find(s => s.id === activeStackId);
+      if (dragStack) {
+        const snap = findSnapTarget(dragStack, newX, newY);
+        setSnapTargetId(snap);
+      }
     };
 
     const onUp = (e: PointerEvent) => {
-      if (activeIdx === null) return;
-      const from = activeIdx;
-      activeIdx  = null;
+      const sid = activeStackId;
+      activeStackId = null;
+      if (!sid) return;
 
-      if (!moved) return; // tap — let TouchableOpacity handle it normally
+      if (!moved) return; // tap — let TouchableOpacity handle it
 
-      // It was a drag — suppress any subsequent tap event
-      draggedRecentlyRef.current = true;
-      setTimeout(() => { draggedRecentlyRef.current = false; }, 150);
+      draggedRecentRef.current = true;
+      setTimeout(() => { draggedRecentRef.current = false; }, 150);
 
-      const blocks = displayBlocksRef.current;
-      if (isOverTrashZone(e.clientY)) {
-        setWorkspaceBlocks(blocks.filter((_, i) => i !== from));
-      } else {
-        const to = getDropIndex(e.clientY);
-        if (to !== from && to !== from + 1) {
-          const arr = [...blocks];
-          const [m]  = arr.splice(from, 1);
-          arr.splice(to > from ? to - 1 : to, 0, m);
-          setWorkspaceBlocks(arr);
+      const dx = e.clientX - startMouseRef.current.x;
+      const dy = e.clientY - startMouseRef.current.y;
+      const newX = startStackRef.current.x + dx;
+      const newY = startStackRef.current.y + dy;
+
+      const current = stacksRef.current;
+      const dragStack = current.find((s: BlockStack) => s.id === sid);
+      if (dragStack) {
+        const snapId = findSnapTarget(dragStack, newX, newY);
+        if (snapId) {
+          setStacks(
+            current
+              .filter((s: BlockStack) => s.id !== sid)
+              .map((s: BlockStack) => s.id === snapId
+                ? { ...s, blocks: [...s.blocks, ...dragStack.blocks] }
+                : s
+              )
+          );
+        } else {
+          setStacks(current.map((s: BlockStack) => s.id === sid ? { ...s, x: newX, y: newY } : s));
         }
       }
-      cancelDrag();
+
+      setDraggingId(null);
+      setSnapTargetId(null);
+      draggingIdRef.current = null;
       moved = false;
     };
 
@@ -146,42 +177,30 @@ export default function Workspace() {
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup',   onUp);
     };
-  }, [dragAnim, cancelDrag, getDropIndex, isOverTrashZone, setWorkspaceBlocks]);
+  }, [dragAnimX, dragAnimY, setStacks, findSnapTarget]);
 
-  // ── Tap handlers ─────────────────────────────────────────────────────────
-  const handleEventTap = useCallback((block: WorkspaceBlock, index: number) => {
-    if (draggedRecentlyRef.current) return;
-    triggerScript(displayBlocksRef.current.slice(index));
+  // ── Tap handlers ────────────────────────────────────────────────────────
+  const handleEventTap = useCallback((block: WorkspaceBlock, stackBlocks: WorkspaceBlock[], blockIdx: number) => {
+    if (draggedRecentRef.current) return;
+    triggerScript(stackBlocks.slice(blockIdx));
   }, [triggerScript]);
 
   const handleBlockTap = useCallback((block: WorkspaceBlock) => {
-    if (draggedRecentlyRef.current) return;
+    if (draggedRecentRef.current) return;
     tapBlock(block);
   }, [tapBlock]);
 
-  // ── Render ───────────────────────────────────────────────────────────────
   return (
-    <View
-      ref={containerRef}
-      style={styles.container}
-      onLayout={(e) => {
-        containerYRef.current = e.nativeEvent.layout.y;
-        containerHRef.current = e.nativeEvent.layout.height;
-      }}
-    >
-      <View style={StyleSheet.absoluteFill} pointerEvents="none"><DotGrid /></View>
-
-      {activeBlockIndex !== null && !usbDisconnectedWhileRunning && (
+    <View style={styles.root}>
+      {activeBlockId !== null && !usbDisconnectedWhileRunning && (
         <View style={styles.runningBar} pointerEvents="none" />
       )}
-
       {usbDisconnectedWhileRunning && (
         <View style={styles.usbBanner}>
           <Text style={styles.usbBannerText}>⚠️  Placa desconectada</Text>
         </View>
       )}
-
-      {activeBlockIndex === null && !usbDisconnectedWhileRunning && (
+      {activeBlockId === null && !usbDisconnectedWhileRunning && (
         <View style={styles.listeningBadge} pointerEvents="none">
           <View style={styles.listeningDot} />
           <Text style={styles.listeningText}>toque na placa para iniciar</Text>
@@ -189,97 +208,89 @@ export default function Workspace() {
       )}
 
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        scrollEnabled={draggingIndex === null}
+        ref={scrollRef}
+        horizontal
+        style={{ flex: 1 }}
+        contentContainerStyle={{ width: CANVAS_W }}
         scrollEventThrottle={16}
-        onScroll={(e) => { scrollOffsetRef.current = e.nativeEvent.contentOffset.y; }}
+        scrollEnabled={draggingId === null}
+        onScroll={e => { scrollOffsetRef.current.x = e.nativeEvent.contentOffset.x; }}
       >
-        {displayBlocks.map((block, index) => {
-          const isDragging   = draggingIndex === index;
-          const isDropBefore = dropIndex === index && draggingIndex !== null && draggingIndex !== index;
-          const isDropAfter  = dropIndex === index + 1 && draggingIndex !== null && draggingIndex !== index;
+        <ScrollView
+          contentContainerStyle={{ height: CANVAS_H }}
+          scrollEventThrottle={16}
+          scrollEnabled={draggingId === null}
+          onScroll={e => { scrollOffsetRef.current.y = e.nativeEvent.contentOffset.y; }}
+        >
+          <View ref={canvasRef} style={styles.canvas}>
+            <DotGrid />
 
-          return (
-            <View
-              key={block.id}
-              onLayout={(e: LayoutChangeEvent) => {
-                itemLayouts.current[index] = {
-                  y: e.nativeEvent.layout.y,
-                  height: e.nativeEvent.layout.height,
-                };
-              }}
-            >
-              {isDropBefore && <DropLine color={displayBlocks[draggingIndex!]?.color} />}
+            {displayStacks.map(stack => {
+              const isDragging = draggingId === stack.id;
+              const isSnap     = snapTargetId === stack.id;
 
-              {/* No responder props — pointer events handle drag, TouchableOpacity handles tap */}
-              <Animated.View
-                style={isDragging
-                  ? { transform: [{ translateY: dragAnim }], zIndex: 100 }
-                  : undefined}
-              >
-                <CodeBlock
-                  block={block}
-                  isFirst={index === 0}
-                  isLast={index === displayBlocks.length - 1}
-                  isDragging={isDragging}
-                  isActive={activeBlockIndex === index}
-                  onEventTap={isTouchEventBlock(block)
-                    ? () => handleEventTap(block, index)
-                    : undefined}
-                  onBlockTap={() => handleBlockTap(block)}
-                />
-              </Animated.View>
-
-              {isDropAfter && <DropLine color={displayBlocks[draggingIndex!]?.color} />}
-            </View>
-          );
-        })}
-
-        {displayBlocks.length === 0 && (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>Arraste blocos da{'\n'}biblioteca para cá</Text>
+              return (
+                <Animated.View
+                  key={stack.id}
+                  onLayout={e => { stackHeights.current[stack.id] = e.nativeEvent.layout.height; }}
+                  style={[
+                    styles.stackPos,
+                    isDragging
+                      ? { left: dragAnimX, top: dragAnimY, zIndex: 100 }
+                      : { left: stack.x, top: stack.y },
+                    isSnap && styles.snapHighlight,
+                  ]}
+                >
+                  {stack.blocks.map((block, bi) => (
+                    <CodeBlock
+                      key={block.id}
+                      block={block}
+                      isFirst={bi === 0}
+                      isLast={bi === stack.blocks.length - 1}
+                      isDragging={isDragging}
+                      isActive={activeBlockId === block.id}
+                      onEventTap={isTouchEvent(block)
+                        ? () => handleEventTap(block, stack.blocks, bi)
+                        : undefined}
+                      onBlockTap={() => handleBlockTap(block)}
+                    />
+                  ))}
+                </Animated.View>
+              );
+            })}
           </View>
-        )}
+        </ScrollView>
       </ScrollView>
-
-      {draggingIndex !== null && (
-        <View style={[styles.trashZone, overTrash && styles.trashZoneActive]}>
-          <Text style={styles.trashIcon}>{overTrash ? '🗑️' : '↓'}</Text>
-          <Text style={styles.trashLabel}>
-            {overTrash ? 'Solte para remover' : 'Arraste aqui para remover'}
-          </Text>
-        </View>
-      )}
     </View>
   );
 }
 
-function DropLine({ color }: { color?: string }) {
-  return <View style={[styles.dropLine, { backgroundColor: color ?? '#FFF' }]} />;
-}
-
 function DotGrid() {
+  const cols = Math.ceil(CANVAS_W / 24);
+  const rows = Math.ceil(CANVAS_H / 24);
   const dots: React.ReactNode[] = [];
-  for (let row = 0; row < 30; row++) {
-    for (let col = 0; col < 18; col++) {
-      dots.push(
-        <View key={`${row}-${col}`} style={{
-          position: 'absolute',
-          top: row * DOTS_SPACING + 12,
-          left: col * DOTS_SPACING + 12,
-          width: 3, height: 3, borderRadius: 1.5,
-          backgroundColor: 'rgba(255,255,255,0.07)',
-        }} />
-      );
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      dots.push(<View key={`${r}-${c}`} style={[styles.dot, { top: r * 24 + 12, left: c * 24 + 12 }]} />);
     }
   }
-  return <View style={StyleSheet.absoluteFill}>{dots}</View>;
+  return <>{dots}</>;
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1A1F2E' },
-  scrollContent: { padding: 24, paddingBottom: 160, gap: 0 },
+  root:   { flex: 1, backgroundColor: '#1A1F2E' },
+  canvas: { width: CANVAS_W, height: CANVAS_H, position: 'relative' },
+
+  stackPos: { position: 'absolute' },
+  snapHighlight: {
+    shadowColor: '#FFF', shadowOpacity: 0.8, shadowRadius: 10,
+    borderRadius: 10,
+  },
+
+  dot: {
+    position: 'absolute', width: 3, height: 3, borderRadius: 1.5,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+  },
 
   runningBar: {
     position: 'absolute', top: 0, left: 0, right: 0,
@@ -296,25 +307,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(34,197,94,0.15)',
     borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6,
   },
-  listeningDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#22C55E' },
+  listeningDot:  { width: 8, height: 8, borderRadius: 4, backgroundColor: '#22C55E' },
   listeningText: { color: '#22C55E', fontSize: 12, fontWeight: '600' },
-
-  dropLine: { height: 4, borderRadius: 2, marginVertical: 3, opacity: 0.85 },
-
-  emptyState: { marginTop: 80, alignItems: 'center' },
-  emptyText: {
-    color: 'rgba(255,255,255,0.2)', fontSize: 18, fontWeight: '600',
-    textAlign: 'center', lineHeight: 28,
-  },
-
-  trashZone: {
-    position: 'absolute', bottom: 0, left: 0, right: 0, height: TRASH_ZONE_H,
-    backgroundColor: 'rgba(60,30,30,0.9)',
-    borderTopWidth: 2, borderTopColor: 'rgba(239,68,68,0.4)',
-    alignItems: 'center', justifyContent: 'center',
-    flexDirection: 'row', gap: 10,
-  },
-  trashZoneActive: { backgroundColor: 'rgba(239,68,68,0.9)', borderTopColor: '#EF4444' },
-  trashIcon:  { fontSize: 20 },
-  trashLabel: { color: 'rgba(255,255,255,0.8)', fontSize: 13, fontWeight: '600' },
 });

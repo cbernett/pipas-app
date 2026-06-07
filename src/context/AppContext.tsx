@@ -1,35 +1,24 @@
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect, ReactNode } from 'react';
-import { BlockDef, EXAMPLE_PROGRAM } from '../data/blocks';
+import { BlockDef, BlockStack, WorkspaceBlock, EXAMPLE_STACKS } from '../data/blocks';
 import { playSound } from '../audio';
 import { board } from '../serial';
 
 export type BoardStatus = 'connected' | 'disconnected' | 'error';
-
-export interface WorkspaceBlock {
-  id: string;
-  defId: string;
-  label: string;
-  category: string;
-  color: string;
-  /** Blocks nested inside bracket/C blocks (repita, sempre, se então) */
-  innerBlocks?: WorkspaceBlock[];
-}
+export type { WorkspaceBlock, BlockStack };
 
 interface AppContextType {
   boardStatus: BoardStatus;
   setBoardStatus: (s: BoardStatus) => void;
-  /** index of the block currently highlighted during execution; null when idle */
-  activeBlockIndex: number | null;
+  activeBlockId: string | null;
   stopRun: () => void;
   simulateTouch: (pad: number) => void;
-  /** Tap a single block to preview its immediate effect (plays sound, etc.) */
   tapBlock: (block: WorkspaceBlock) => void;
-  /** Run the script starting from a given block, arming if needed */
-  triggerScript: (blocksFromHere: WorkspaceBlock[]) => void;
+  triggerScript: (blocks: WorkspaceBlock[]) => void;
   activeTab: 'codigo' | 'sons';
   setActiveTab: (t: 'codigo' | 'sons') => void;
-  workspaceBlocks: WorkspaceBlock[];
-  setWorkspaceBlocks: (b: WorkspaceBlock[]) => void;
+  stacks: BlockStack[];
+  setStacks: (s: BlockStack[]) => void;
+  addStack: (block: WorkspaceBlock, x?: number, y?: number) => void;
   libraryOpen: boolean;
   setLibraryOpen: (o: boolean) => void;
   expandedCategory: string | null;
@@ -43,7 +32,6 @@ interface AppContextType {
 }
 
 const AppContext = createContext<AppContextType | null>(null);
-
 export const useApp = () => {
   const ctx = useContext(AppContext);
   if (!ctx) throw new Error('useApp must be inside AppProvider');
@@ -52,16 +40,13 @@ export const useApp = () => {
 
 function blockDuration(block: WorkspaceBlock): number {
   const label = block.label.toLowerCase();
-  // Only "espere" blocks use their explicit duration
   const waitMatch = label.match(/espere\s+([\d.]+)/);
   if (waitMatch) return Math.min(parseFloat(waitMatch[1]) * 1000, 5000);
-  // Everything else: just long enough to see the highlight flash
   if (block.category === 'Eventos') return 100;
-  if (block.category === 'Som')     return 350; // sound fires async; small pause feels natural
+  if (block.category === 'Som')     return 350;
   return 200;
 }
 
-// Flatten blocks for sequential execution (includes innerBlocks)
 function flattenBlocks(blocks: WorkspaceBlock[]): WorkspaceBlock[] {
   const out: WorkspaceBlock[] = [];
   for (const b of blocks) {
@@ -74,123 +59,120 @@ function flattenBlocks(blocks: WorkspaceBlock[]): WorkspaceBlock[] {
 async function executeBlock(block: WorkspaceBlock): Promise<void> {
   const label = block.label.toLowerCase();
   if (label.includes('toque som')) {
-    const soundMatch = label.match(/toque som\s+(.+)/);
-    const name = soundMatch?.[1]?.trim() ?? 'menu';
-    await playSound(name).catch(() => {});
+    const m = label.match(/toque som\s+(.+)/);
+    await playSound(m?.[1]?.trim() ?? 'menu').catch(() => {});
   }
+}
+
+function findTouchStack(stacks: BlockStack[], pad: number): WorkspaceBlock[] | null {
+  for (const stack of stacks) {
+    const idx = stack.blocks.findIndex(b =>
+      b.defId === `evt_touch_${pad}` ||
+      b.defId === `luz_${pad}` ||
+      b.label.toLowerCase().includes(`toque ${pad}`)
+    );
+    if (idx >= 0) return stack.blocks.slice(idx);
+  }
+  return null;
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [boardStatus, setBoardStatus] = useState<BoardStatus>('disconnected');
-  const [activeBlockIndex, setActiveBlockIndex] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<'codigo' | 'sons'>('codigo');
-  const [workspaceBlocks, setWorkspaceBlocks] = useState<WorkspaceBlock[]>([]);
-  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
+  const [activeTab, setActiveTab]         = useState<'codigo' | 'sons'>('codigo');
+  const [stacks, setStacks]               = useState<BlockStack[]>([]);
+  const [libraryOpen, setLibraryOpen]     = useState(false);
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
-  const [boardSheetOpen, setBoardSheetOpen] = useState(false);
+  const [boardSheetOpen, setBoardSheetOpen]     = useState(false);
   const [usbDisconnectedWhileRunning, setUsbDisconnectedWhileRunning] = useState(false);
   const [draggingBlock, setDraggingBlock] = useState<BlockDef | null>(null);
 
-  const runAbortRef      = useRef(false);
-  const isExecutingRef   = useRef(false); // true only while stepping through blocks
-  const isRunningRef     = useRef(true);  // always armed — program always listens
-  const workspaceBlocksRef = useRef<WorkspaceBlock[]>([]);
-  const executeScriptRef = useRef<(blocks: WorkspaceBlock[]) => void>(() => {});
+  const runAbortRef    = useRef(false);
+  const isExecutingRef = useRef(false);
+  const stacksRef      = useRef<BlockStack[]>(stacks);
+  const execRef        = useRef<(blocks: WorkspaceBlock[]) => void>(() => {});
 
-  const _setWorkspaceBlocks = useCallback((b: WorkspaceBlock[]) => {
-    workspaceBlocksRef.current = b;
-    setWorkspaceBlocks(b);
-  }, []);
+  useEffect(() => { stacksRef.current = stacks; }, [stacks]);
 
   const stopRun = useCallback(() => {
-    // Abort current execution but stay armed — program keeps listening
     runAbortRef.current = true;
     isExecutingRef.current = false;
-    setActiveBlockIndex(null);
+    setActiveBlockId(null);
     setUsbDisconnectedWhileRunning(false);
-    // Re-enable execution on next touch
     setTimeout(() => { runAbortRef.current = false; }, 50);
   }, []);
 
-  // Execute a flat list of blocks sequentially, with highlight
   const executeScript = useCallback(async (blocks: WorkspaceBlock[]) => {
     if (!blocks.length) return;
     isExecutingRef.current = true;
+    runAbortRef.current = false;
     const flat = flattenBlocks(blocks);
 
-    for (let i = 0; i < flat.length; i++) {
+    for (const block of flat) {
       if (runAbortRef.current) break;
-      setActiveBlockIndex(i);
-      await executeBlock(flat[i]);
+      setActiveBlockId(block.id);
+      await executeBlock(block);
       if (runAbortRef.current) break;
-      const dur = blockDuration(flat[i]);
       await new Promise<void>((resolve) => {
-        const t = setTimeout(resolve, dur);
+        const dur = blockDuration(block);
+        const t   = setTimeout(resolve, dur);
         const poll = setInterval(() => {
           if (runAbortRef.current) { clearTimeout(t); clearInterval(poll); resolve(); }
         }, 50);
         setTimeout(() => clearInterval(poll), dur + 100);
       });
     }
+
     isExecutingRef.current = false;
-    if (!runAbortRef.current) setActiveBlockIndex(null);
-    // Stay in listening mode (isRunning stays true) — stop only via stopRun()
+    if (!runAbortRef.current) setActiveBlockId(null);
   }, []);
 
-  useEffect(() => { executeScriptRef.current = executeScript; }, [executeScript]);
+  useEffect(() => { execRef.current = executeScript; }, [executeScript]);
 
-  // Handle touch pad event from board or simulation
-  // Works whether or not the program is "armed" — board touch always triggers
   const handleTouchPad = useCallback((pad: number) => {
-    if (isExecutingRef.current) return; // already mid-execution — ignore
-
-    // Use workspace blocks if any, otherwise fall back to the example program
-    const blocks = workspaceBlocksRef.current.length > 0
-      ? workspaceBlocksRef.current
-      : EXAMPLE_PROGRAM as WorkspaceBlock[];
-    if (!blocks.length) return;
-
-    // Match touch event block for this pad:
-    //   luz_1/luz_2/luz_3 = library touch blocks (pad 1/2/3)
-    //   any label containing "toque {pad}" = example program or renamed blocks
-    const startIdx = blocks.findIndex(b => {
-      if (b.defId === `evt_touch_${pad}`) return true; // new canonical ID
-      if (b.defId === `luz_${pad}`) return true;        // backward compat
-      if (b.label.toLowerCase().includes(`toque ${pad}`)) return true;
-      return false;
-    });
-
-    const script = startIdx >= 0 ? blocks.slice(startIdx) : blocks;
-
+    if (isExecutingRef.current) return;
+    const activStacks = stacksRef.current;
+    const script = findTouchStack(activStacks, pad)
+      ?? findTouchStack(EXAMPLE_STACKS, pad)
+      ?? null;
+    if (!script) return;
     runAbortRef.current = false;
-    executeScriptRef.current(script);
+    execRef.current(script);
   }, []);
 
   useEffect(() => board.onTouch(handleTouchPad), [handleTouchPad]);
 
-
-  const simulateTouch = useCallback((pad: number) => handleTouchPad(pad), [handleTouchPad]);
-
-  /** Preview a single block's effect immediately — no arm state required */
   const tapBlock = useCallback((block: WorkspaceBlock) => {
     executeBlock(block).catch(() => {});
   }, []);
 
-  /** Run from this block downward */
-  const triggerScript = useCallback((blocksFromHere: WorkspaceBlock[]) => {
-    if (!blocksFromHere.length) return;
+  const triggerScript = useCallback((blocks: WorkspaceBlock[]) => {
     if (isExecutingRef.current) return;
     runAbortRef.current = false;
-    executeScriptRef.current(blocksFromHere);
+    execRef.current(blocks);
+  }, []);
+
+  const simulateTouch = useCallback((pad: number) => handleTouchPad(pad), [handleTouchPad]);
+
+  const addStack = useCallback((block: WorkspaceBlock, x = 40, y = 40) => {
+    const newStack: BlockStack = {
+      id: `stack_${Date.now()}`,
+      x, y,
+      blocks: [{
+        ...block,
+        id: `ws_${Date.now()}_${block.id}`,
+      }],
+    };
+    setStacks(prev => [...prev, newStack]);
+    setLibraryOpen(false);
   }, []);
 
   return (
     <AppContext.Provider value={{
       boardStatus, setBoardStatus,
-      activeBlockIndex,
-      stopRun, simulateTouch, tapBlock, triggerScript,
+      activeBlockId, stopRun, simulateTouch, tapBlock, triggerScript,
       activeTab, setActiveTab,
-      workspaceBlocks, setWorkspaceBlocks: _setWorkspaceBlocks,
+      stacks, setStacks, addStack,
       libraryOpen, setLibraryOpen,
       expandedCategory, setExpandedCategory,
       boardSheetOpen, setBoardSheetOpen,

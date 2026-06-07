@@ -12,21 +12,19 @@ interface Props {
 }
 
 export default function CategoryBand({ category, blocks, isExpanded, onToggle }: Props) {
-  const { setWorkspaceBlocks, workspaceBlocks, setLibraryOpen } = useApp();
+  const { addStack } = useApp();
   const color = CATEGORY_COLORS[category];
-  const dark = CATEGORY_DARK[category];
-  const useDarkText = category === 'Eventos';
+  const dark  = CATEGORY_DARK[category];
+  const useDarkText = false;
 
   const handleBlockPress = (block: BlockDef) => {
-    const newBlock: WorkspaceBlock = {
-      id: `ws_${Date.now()}_${block.id}`,
-      defId: block.id,
-      label: block.label,
+    addStack({
+      id:       block.id,
+      defId:    block.id,
+      label:    block.label,
       category: block.category,
-      color: CATEGORY_COLORS[block.category as BlockCategory],
-    };
-    setWorkspaceBlocks([...workspaceBlocks, newBlock]);
-    setLibraryOpen(false);
+      color:    CATEGORY_COLORS[block.category as BlockCategory],
+    }, 40 + Math.random() * 60, 40 + Math.random() * 60);
   };
 
   return (

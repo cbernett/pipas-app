@@ -337,7 +337,7 @@ export default function Workspace() {
                   {stack.blocks.map((block, bi) => (
                     <View
                       key={block.id}
-                      style={bi === 0 ? undefined : { marginTop: -TAB_H, zIndex: stack.blocks.length - bi }}
+                      style={{ marginTop: bi === 0 ? 0 : -TAB_H, zIndex: stack.blocks.length - bi + 1 }}
                       onLayout={e => {
                         if (!blockHeightsRef.current[stack.id]) blockHeightsRef.current[stack.id] = [];
                         blockHeightsRef.current[stack.id][bi] = e.nativeEvent.layout.height;

@@ -1,30 +1,32 @@
 import React from 'react';
 import { TouchableOpacity, View, StyleSheet } from 'react-native';
-import { useApp, BoardStatus } from '../context/AppContext';
+import { useApp } from '../context/AppContext';
 
 export default function BoardStatusButton() {
   const { boardStatus, setBoardSheetOpen } = useApp();
 
+  const ringColor =
+    boardStatus === 'connected' ? '#22C55E' :
+    boardStatus === 'error'     ? '#EF4444' :
+    'rgba(255,255,255,0.35)';
+
   const dotColor =
     boardStatus === 'connected' ? '#22C55E' :
-    boardStatus === 'error' ? '#EF4444' : 'transparent';
-
-  const iconColor =
-    boardStatus === 'connected' ? '#22C55E' :
-    boardStatus === 'error' ? '#EF4444' : '#BBBBBB';
+    boardStatus === 'error'     ? '#EF4444' : undefined;
 
   return (
-    <TouchableOpacity
-      style={styles.button}
-      onPress={() => setBoardSheetOpen(true)}
-      activeOpacity={0.7}
-    >
-      <View style={[styles.circle, { borderColor: iconColor }]}>
-        {/* USB icon represented as lines */}
-        <View style={[styles.usbBody, { backgroundColor: iconColor }]} />
-        <View style={[styles.usbPlug, { backgroundColor: iconColor }]} />
+    <TouchableOpacity style={styles.btn} onPress={() => setBoardSheetOpen(true)} activeOpacity={0.7}>
+      {/* Outlined circle */}
+      <View style={[styles.ring, { borderColor: ringColor }]}>
+        {/* Board icon: three horizontal pins */}
+        <View style={styles.pins}>
+          <View style={[styles.pin, { backgroundColor: ringColor }]} />
+          <View style={[styles.pin, { backgroundColor: ringColor }]} />
+          <View style={[styles.pin, { backgroundColor: ringColor }]} />
+        </View>
       </View>
-      {boardStatus !== 'disconnected' && (
+      {/* Status dot */}
+      {dotColor && (
         <View style={[styles.dot, { backgroundColor: dotColor }]} />
       )}
     </TouchableOpacity>
@@ -32,39 +34,25 @@ export default function BoardStatusButton() {
 }
 
 const styles = StyleSheet.create({
-  button: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
+  btn: {
+    width: 38, height: 38,
+    alignItems: 'center', justifyContent: 'center',
   },
-  circle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+  ring: {
+    width: 32, height: 32, borderRadius: 16,
     borderWidth: 2,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  pins: {
+    gap: 3,
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  usbBody: {
-    width: 10,
-    height: 8,
-    borderRadius: 1,
-  },
-  usbPlug: {
-    width: 6,
-    height: 4,
-    borderRadius: 1,
-    marginTop: 1,
+  pin: {
+    width: 12, height: 2.5, borderRadius: 1.5,
   },
   dot: {
-    width: 9,
-    height: 9,
-    borderRadius: 5,
-    position: 'absolute',
-    top: 2,
-    right: 2,
-    borderWidth: 1.5,
-    borderColor: '#FFF',
+    width: 8, height: 8, borderRadius: 4,
+    position: 'absolute', top: 1, right: 1,
+    borderWidth: 1.5, borderColor: '#000',
   },
 });

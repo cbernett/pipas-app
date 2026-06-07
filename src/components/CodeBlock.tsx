@@ -5,13 +5,14 @@ import {
 import { WorkspaceBlock } from '../context/AppContext';
 import { BLOCK_TEMPLATES, CATEGORY_DARK, BlockParamDef } from '../data/blocks';
 
-export const TAB_W      = 40;  // connector tab width
-export const TAB_H      = 12;  // connector tab height
-export const TAB_OFFSET = 16;  // left offset of tab from block edge
-const BLOCK_R           = 14;  // body corner radius
-const CIRCLE_D          = 46;  // event-block circle diameter
-const BRACKET_DEFIDS    = ['ctrl_2', 'ctrl_3', 'ctrl_4'];
-const WS_BG             = '#1A1F2E'; // workspace background (used for indent colour)
+export const TAB_W      = 36;   // connector width
+export const TAB_H      = 11;   // connector height
+export const TAB_OFFSET = 18;   // horizontal offset from block left edge
+const BLOCK_R           = 12;   // body corner radius
+const CIRCLE_D          = 44;   // event-block circle diameter
+const WS_BG             = '#1A1F2E';
+
+const BRACKET_DEFIDS = ['ctrl_2', 'ctrl_3', 'ctrl_4'];
 
 interface Props {
   block: WorkspaceBlock;
@@ -25,9 +26,9 @@ interface Props {
 }
 
 export default function CodeBlock(props: Props) {
-  const { block, isFirst, isLast, preview, isDragging, isActive, onEventTap, onBlockTap } = props;
+  const { block } = props;
   const isEvent   = block.category === 'Eventos';
-  const isBracket = BRACKET_DEFIDS.includes(block.defId) && !preview;
+  const isBracket = BRACKET_DEFIDS.includes(block.defId) && !props.preview;
   const parts     = BLOCK_TEMPLATES[block.defId] ?? [block.label];
 
   if (isBracket) return <BracketBlock {...props} parts={parts} />;
@@ -35,10 +36,9 @@ export default function CodeBlock(props: Props) {
   return                <StackBlock   {...props} parts={parts} />;
 }
 
-// ─── Event block — OctoStudio "key" shape ────────────────────────────────────
+// ─── Event block — OctoStudio "key" shape ─────────────────────────────────
 
 function EventBlock({ block, isLast, preview, isDragging, isActive, onEventTap, onBlockTap, parts }: Props & { parts: any[] }) {
-  const wrap = onEventTap || onBlockTap;
   const body = (
     <View style={[
       styles.eventBody, { backgroundColor: block.color },
@@ -52,18 +52,16 @@ function EventBlock({ block, isLast, preview, isDragging, isActive, onEventTap, 
   return (
     <View style={styles.eventWrapper}>
       <View style={styles.eventRow}>
-        {/* Circle cap — the "key head" */}
+        {/* Circular cap — the key "head", no icon inside */}
         <TouchableOpacity
           style={[styles.eventCircle, { backgroundColor: block.color }]}
           onPress={onEventTap ?? onBlockTap}
           activeOpacity={0.82}
-        >
-          <View style={styles.eventPlay} />
-        </TouchableOpacity>
+        />
 
-        {/* Body — rounded right side, slight left overlap with circle */}
-        {wrap && !preview ? (
-          <TouchableOpacity onPress={onEventTap ?? onBlockTap} activeOpacity={0.82} style={{ flex: 0 }}>
+        {/* Body — overlaps circle slightly on the left */}
+        {(onEventTap || onBlockTap) && !preview ? (
+          <TouchableOpacity onPress={onEventTap ?? onBlockTap} activeOpacity={0.82} style={{ flexShrink: 0 }}>
             {body}
           </TouchableOpacity>
         ) : body}
@@ -79,36 +77,31 @@ function EventBlock({ block, isLast, preview, isDragging, isActive, onEventTap, 
   );
 }
 
-// ─── Stack block — normal connector block ────────────────────────────────────
+// ─── Stack block ──────────────────────────────────────────────────────────
 
-function StackBlock({ block, isFirst, isLast, preview, isDragging, isActive, onEventTap, onBlockTap, parts }: Props & { parts: any[] }) {
-  const wrap = onEventTap || onBlockTap;
+function StackBlock({ block, isLast, preview, isDragging, isActive, onEventTap, onBlockTap, parts }: Props & { parts: any[] }) {
   const body = (
     <View style={[
       styles.body, { backgroundColor: block.color },
       isDragging && styles.bodyDragging,
       isActive   && styles.bodyActive,
     ]}>
+      {/* Inset indent — always present on non-event blocks; the tab from above covers it */}
+      {!preview && (
+        <View style={styles.insetIndent} />
+      )}
       <BlockLabel parts={parts} />
     </View>
   );
 
   return (
     <View style={styles.wrapper}>
-      {/* Top indent — the "female" connector slot, matches tab shape exactly */}
-      {!isFirst && !preview && (
-        <View style={styles.indentRow}>
-          <View style={[styles.indent, { backgroundColor: WS_BG }]} />
-        </View>
-      )}
-
-      {wrap && !preview ? (
+      {(onEventTap || onBlockTap) && !preview ? (
         <TouchableOpacity onPress={onEventTap ?? onBlockTap} activeOpacity={0.82}>
           {body}
         </TouchableOpacity>
       ) : body}
 
-      {/* Bottom connector tab */}
       {!isLast && !preview && (
         <View style={styles.tabRow}>
           <View style={[styles.tab, { backgroundColor: block.color }]} />
@@ -118,22 +111,16 @@ function StackBlock({ block, isFirst, isLast, preview, isDragging, isActive, onE
   );
 }
 
-// ─── Bracket / C-block ───────────────────────────────────────────────────────
+// ─── Bracket / C-block ────────────────────────────────────────────────────
 
-function BracketBlock({ block, isFirst, isLast, preview, isDragging, isActive, parts }: Props & { parts: any[] }) {
+function BracketBlock({ block, isLast, preview, isActive, parts }: Props & { parts: any[] }) {
   const inner = block.innerBlocks ?? [];
   return (
     <View style={styles.wrapper}>
-      {!isFirst && !preview && (
-        <View style={styles.indentRow}>
-          <View style={[styles.indent, { backgroundColor: WS_BG }]} />
-        </View>
-      )}
-
       <View style={[styles.bracketTop, { backgroundColor: block.color }, isActive && styles.bodyActive]}>
+        {!preview && <View style={styles.insetIndent} />}
         <BlockLabel parts={parts} />
       </View>
-
       <View style={styles.bracketBody}>
         <View style={[styles.bracketArm, { backgroundColor: block.color }]} />
         <View style={styles.bracketInner}>
@@ -145,11 +132,9 @@ function BracketBlock({ block, isFirst, isLast, preview, isDragging, isActive, p
           }
         </View>
       </View>
-
       <View style={[styles.bracketBottom, { backgroundColor: block.color }]}>
         <Text style={styles.returnArrow}>↩</Text>
       </View>
-
       {!isLast && !preview && (
         <View style={styles.tabRow}>
           <View style={[styles.tab, { backgroundColor: block.color }]} />
@@ -159,7 +144,7 @@ function BracketBlock({ block, isFirst, isLast, preview, isDragging, isActive, p
   );
 }
 
-// ─── Label with editable bubbles ─────────────────────────────────────────────
+// ─── Label renderer ───────────────────────────────────────────────────────
 
 function BlockLabel({ parts }: { parts: Array<string | BlockParamDef> }) {
   return (
@@ -198,101 +183,105 @@ function DropdownBubble({ value, options }: { value: string; options?: string[] 
   );
 }
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
+// ─── Styles ───────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  wrapper: { alignSelf: 'flex-start', minWidth: 160 },
+  wrapper:      { alignSelf: 'flex-start' },
 
-  // ── Indent (female connector) ─────────────────
-  indentRow: { paddingLeft: TAB_OFFSET },
-  indent: {
+  // ── Inset indent — sits inside the body at top-left, covered by tab from above
+  insetIndent: {
+    position: 'absolute',
+    top: 0, left: TAB_OFFSET,
     width: TAB_W, height: TAB_H,
-    borderBottomLeftRadius: 7, borderBottomRightRadius: 7,
+    backgroundColor: WS_BG,
+    borderBottomLeftRadius: 6, borderBottomRightRadius: 6,
   },
 
-  // ── Stack block body ──────────────────────────
+  // ── Stack block body
   body: {
+    position: 'relative',
     flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 10, paddingHorizontal: 16,
-    minHeight: 46, borderRadius: BLOCK_R,
-    gap: 8,
+    // paddingTop includes space for the inset indent
+    paddingTop: TAB_H + 7,
+    paddingBottom: 9,
+    paddingHorizontal: 14,
+    borderRadius: BLOCK_R,
+    gap: 6,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2, shadowRadius: 4, elevation: 4,
+    shadowOpacity: 0.22, shadowRadius: 4, elevation: 4,
   },
   bodyDragging: { shadowOpacity: 0.5, shadowRadius: 14, elevation: 14 },
   bodyActive: {
-    borderWidth: 3, borderColor: 'rgba(255,255,255,0.9)',
+    borderWidth: 2.5, borderColor: 'rgba(255,255,255,0.9)',
     shadowColor: '#FFF', shadowOpacity: 0.5, shadowRadius: 10,
   },
 
-  // ── Tab (male connector) ──────────────────────
+  // ── Tab (male connector) — left-aligned
   tabRow: { paddingLeft: TAB_OFFSET },
   tab: {
     width: TAB_W, height: TAB_H,
-    borderBottomLeftRadius: 7, borderBottomRightRadius: 7,
+    borderBottomLeftRadius: 6, borderBottomRightRadius: 6,
   },
 
-  // ── Event block (key shape) ───────────────────
+  // ── Event block (key shape) ───────────────────────────────────────────
   eventWrapper: { alignSelf: 'flex-start' },
   eventRow: { flexDirection: 'row', alignItems: 'center' },
+
   eventCircle: {
-    width: CIRCLE_D, height: CIRCLE_D, borderRadius: CIRCLE_D / 2,
-    alignItems: 'center', justifyContent: 'center',
+    width: CIRCLE_D, height: CIRCLE_D,
+    borderRadius: CIRCLE_D / 2,
     zIndex: 2,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2, shadowRadius: 4, elevation: 4,
   },
-  eventPlay: {
-    width: 0, height: 0,
-    borderTopWidth: 7, borderBottomWidth: 7, borderLeftWidth: 12,
-    borderTopColor: 'transparent', borderBottomColor: 'transparent',
-    borderLeftColor: 'rgba(0,0,0,0.5)',
-    marginLeft: 2,
-  },
   eventBody: {
+    position: 'relative',
     flexDirection: 'row', alignItems: 'center',
-    // overlap circle by ~1/3 of its radius to form seamless key shape
-    marginLeft: -(CIRCLE_D * 0.28),
-    paddingLeft: CIRCLE_D * 0.28 + 10,
-    paddingRight: 16, paddingVertical: 10,
-    minHeight: CIRCLE_D, minWidth: 80,
+    // Overlap circle so they merge seamlessly
+    marginLeft: -(CIRCLE_D * 0.32),
+    paddingLeft: CIRCLE_D * 0.32 + 10,
+    paddingRight: 14,
+    paddingVertical: 10,
+    minHeight: CIRCLE_D,
     borderTopRightRadius: BLOCK_R, borderBottomRightRadius: BLOCK_R,
     borderTopLeftRadius: 6, borderBottomLeftRadius: 6,
-    zIndex: 1, gap: 8,
+    zIndex: 1, gap: 6,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2, shadowRadius: 4, elevation: 4,
+    shadowOpacity: 0.18, shadowRadius: 4, elevation: 3,
   },
 
-  // ── Bracket block ─────────────────────────────
+  // ── Bracket ────────────────────────────────────────────────────────────
   bracketTop: {
-    paddingVertical: 10, paddingHorizontal: 16,
+    position: 'relative',
+    paddingTop: TAB_H + 7, paddingBottom: 9, paddingHorizontal: 14,
     borderTopLeftRadius: BLOCK_R, borderTopRightRadius: BLOCK_R,
-    flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 46,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
   },
-  bracketBody: { flexDirection: 'row' },
-  bracketArm:  { width: 22, minHeight: 44 },
-  bracketInner: { flex: 1, paddingVertical: 8, paddingLeft: 8 },
-  bracketSlot: { height: 40, borderRadius: 10, borderWidth: 2, borderStyle: 'dashed', opacity: 0.4, marginVertical: 4 },
+  bracketBody:  { flexDirection: 'row' },
+  bracketArm:   { width: 20, minHeight: 36 },
+  bracketInner: { flex: 1, paddingVertical: 6, paddingLeft: 8 },
+  bracketSlot:  { height: 36, borderRadius: 8, borderWidth: 2, borderStyle: 'dashed', opacity: 0.4 },
   bracketBottom: {
-    height: 26, borderBottomLeftRadius: BLOCK_R, borderBottomRightRadius: BLOCK_R,
+    height: 24, borderBottomLeftRadius: BLOCK_R, borderBottomRightRadius: BLOCK_R,
     alignItems: 'center', justifyContent: 'center',
   },
-  returnArrow: { color: 'rgba(255,255,255,0.6)', fontSize: 15 },
+  returnArrow: { color: 'rgba(255,255,255,0.55)', fontSize: 14 },
 
-  // ── Label ─────────────────────────────────────
-  labelRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, flex: 1 },
-  labelText: { color: '#FFF', fontSize: 15, fontWeight: '700' },
+  // ── Label ───────────────────────────────────────────────────────────────
+  labelRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 5, flexShrink: 1 },
+  labelText: { color: '#FFF', fontSize: 14, fontWeight: '700' },
 
-  numBubble: { backgroundColor: '#FFF', borderRadius: 7 },
+  numBubble: { backgroundColor: '#FFF', borderRadius: 6 },
   numInput: {
-    color: '#1A1A2E', fontSize: 15, fontWeight: '700', textAlign: 'center',
-    paddingVertical: Platform.OS === 'ios' ? 4 : 2, paddingHorizontal: 4,
+    color: '#1A1A2E', fontSize: 14, fontWeight: '700', textAlign: 'center',
+    paddingVertical: Platform.OS === 'ios' ? 3 : 1, paddingHorizontal: 4,
   },
   dropBubble: {
-    backgroundColor: '#FFF', borderRadius: 7,
-    paddingHorizontal: 8, paddingVertical: 5,
-    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#FFF', borderRadius: 6,
+    paddingHorizontal: 7, paddingVertical: 4,
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    flexShrink: 0,
   },
-  dropText:    { color: '#1A1A2E', fontSize: 14, fontWeight: '700' },
-  dropChevron: { color: '#666', fontSize: 11 },
+  dropText:    { color: '#1A1A2E', fontSize: 13, fontWeight: '700' },
+  dropChevron: { color: '#666', fontSize: 10 },
 });

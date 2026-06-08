@@ -95,11 +95,6 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: '#1C1F2B',
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 6,
   },
   handleArea: {
     height: HANDLE_HEIGHT,

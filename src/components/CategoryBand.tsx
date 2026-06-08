@@ -87,7 +87,7 @@ function LibraryBlockItem({ block, addStack }: { block: BlockDef; addStack: (b: 
 
   return (
     <View ref={ref} style={styles.blockItem}>
-      <CodeBlock block={wsBlock} isFirst isLast />
+      <CodeBlock block={wsBlock} preview isFirst isLast />
     </View>
   );
 }
@@ -142,7 +142,6 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 20,
     gap: 12,
-    borderLeftWidth: 4,
   },
   blockItem: {
     alignSelf: 'flex-start',

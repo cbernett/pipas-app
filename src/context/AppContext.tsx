@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect, ReactNode } from 'react';
-import { BlockDef, BlockStack, WorkspaceBlock } from '../data/blocks';
+import { BlockDef, BlockStack, WorkspaceBlock, BLOCK_TEMPLATES } from '../data/blocks';
+import { liveParamValues } from '../components/CodeBlock';
 import { playSound } from '../audio';
 import { board } from '../serial';
 
@@ -38,10 +39,27 @@ export const useApp = () => {
   return ctx;
 };
 
+/** Read the live (user-edited) number value for a param, falling back to template default. */
+function liveNumber(block: WorkspaceBlock, paramIdx: number): number {
+  const live = liveParamValues.get(`${block.id}_${paramIdx}`);
+  if (live !== undefined) return parseFloat(live) || 0;
+  const parts = BLOCK_TEMPLATES[block.defId];
+  if (parts) {
+    const part = parts[paramIdx];
+    if (part && typeof part === 'object' && part.type === 'number') return parseFloat(part.value) || 0;
+  }
+  return 0;
+}
+
 function blockDuration(block: WorkspaceBlock): number {
+  // ctrl_1 / ctrl_1b = espere N segundo(s)
+  if (block.defId === 'ctrl_1' || block.defId === 'ctrl_1b') {
+    const n = liveNumber(block, 1);  // param index 1 = the number
+    return Math.min(n * 1000, 10000);
+  }
   const label = block.label.toLowerCase();
   const waitMatch = label.match(/espere\s+([\d.]+)/);
-  if (waitMatch) return Math.min(parseFloat(waitMatch[1]) * 1000, 5000);
+  if (waitMatch) return Math.min(parseFloat(waitMatch[1]) * 1000, 10000);
   if (block.category === 'Eventos') return 100;
   if (block.category === 'Som')     return 350;
   return 200;
@@ -131,7 +149,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         // ── repita N vezes ──────────────────────────────────────────────
         if (block.defId === 'ctrl_2') {
-          const n = parseInt(block.label.match(/\d+/)?.[0] ?? '10', 10) || 10;
+          const n = Math.max(1, Math.round(liveNumber(block, 1))) || 10;
           for (let i = 0; i < n; i++) {
             if (runAbortRef.current) break;
             await runBlocks(block.innerBlocks ?? []);

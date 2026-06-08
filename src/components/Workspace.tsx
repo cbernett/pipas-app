@@ -21,8 +21,10 @@ export default function Workspace() {
   const displayStacks = stacks;
 
   // ── Drag/snap state ─────────────────────────────────────────────────────
-  const [draggingId,    setDraggingId]    = useState<string | null>(null);
-  const [snapTargetId,  setSnapTargetId]  = useState<string | null>(null);
+  const [draggingId,      setDraggingId]      = useState<string | null>(null);
+  const [snapTargetId,    setSnapTargetId]    = useState<string | null>(null);
+  const [bracketHoverId,  setBracketHoverId]  = useState<string | null>(null);
+  const bracketHoverRef   = useRef<string | null>(null);
   const [snapPreviewPos, setSnapPreviewPos] = useState<{ x: number; y: number } | null>(null);
   // Library drag ghost block (for snap preview when dragging from library)
   const [libDragBlock, setLibDragBlock]   = useState<WorkspaceBlock | null>(null);
@@ -287,7 +289,13 @@ export default function Workspace() {
       if (ld?.active && ld?.hasMoved) {
         const pos = toCanvas(e.clientX, e.clientY);
         const tempStack: BlockStack = { id: '__lib__', x: pos.x, y: pos.y, blocks: [ld.block] };
-        const snap = findSnap(tempStack, pos.x, pos.y);
+        const bSnap = findBracketSnap(tempStack, pos.x, pos.y);
+        const newBId = bSnap?.bracketBlockId ?? null;
+        if (newBId !== bracketHoverRef.current) {
+          bracketHoverRef.current = newBId;
+          setBracketHoverId(newBId);
+        }
+        const snap = !bSnap ? findSnap(tempStack, pos.x, pos.y) : null;
         setLibDragBlock(ld.block);
         setSnapTargetId(snap?.id ?? null);
         setSnapPreviewPos(snap
@@ -313,7 +321,14 @@ export default function Workspace() {
 
       const dragStack = localStacksRef.current.find(s => s.id === dsId);
       if (dragStack) {
-        const snap = findSnap(dragStack, newX, newY);
+        const cursorCanvas = toCanvas(e.clientX, e.clientY);
+        const bSnap = findBracketSnap(dragStack, cursorCanvas.x, cursorCanvas.y);
+        const newBId = bSnap?.bracketBlockId ?? null;
+        if (newBId !== bracketHoverRef.current) {
+          bracketHoverRef.current = newBId;
+          setBracketHoverId(newBId);
+        }
+        const snap = !bSnap ? findSnap(dragStack, newX, newY) : null;
         setSnapTargetId(snap?.id ?? null);
         setSnapPreviewPos(snap ? {
           x: localStacksRef.current.find(s => s.id === snap.id)?.x ?? newX,
@@ -350,16 +365,19 @@ export default function Workspace() {
         } else {
           addStackRef.current(wsBlock, Math.max(10, pos.x - 60), Math.max(10, pos.y - 30));
         }
-        setLibDragBlock(null); setSnapTargetId(null); setSnapPreviewPos(null);
+        bracketHoverRef.current = null;
+        setLibDragBlock(null); setSnapTargetId(null); setSnapPreviewPos(null); setBracketHoverId(null);
         return;
       }
 
       const pd = pendingDrag.current;
       pendingDrag.current  = null;
       draggingIdRef.current = null;
+      bracketHoverRef.current = null;
       setDraggingId(null);
       setSnapTargetId(null);
       setSnapPreviewPos(null);
+      setBracketHoverId(null);
 
       if (!pd) return;
 
@@ -441,7 +459,7 @@ export default function Workspace() {
       document.removeEventListener('pointerup',   onUp);
     };
   }, [stackAt, blockIdxAt, accumHeight, toCanvas, findSnap, findBracketSnap,
-      setStacks, dragAnimX, dragAnimY, tapBlock, triggerScript]);
+      setStacks, dragAnimX, dragAnimY, tapBlock, triggerScript, setBracketHoverId]);
 
   // ── Tap handlers ────────────────────────────────────────────────────────
   const handleEventTap = useCallback((block: WorkspaceBlock, stackBlocks: WorkspaceBlock[], bi: number) => {
@@ -481,6 +499,8 @@ export default function Workspace() {
         contentContainerStyle={{ width: CANVAS_W }}
         scrollEnabled={!draggingId}
         scrollEventThrottle={16}
+        showsHorizontalScrollIndicator={false}
+        showsVerticalScrollIndicator={false}
         onScroll={e => {
             scrollOffset.current.x = e.nativeEvent.contentOffset.x;
             (window as any).__workspaceScroll = { ...scrollOffset.current };
@@ -490,6 +510,8 @@ export default function Workspace() {
           contentContainerStyle={{ height: CANVAS_H }}
           scrollEnabled={!draggingId}
           scrollEventThrottle={16}
+          showsHorizontalScrollIndicator={false}
+          showsVerticalScrollIndicator={false}
           onScroll={e => {
             scrollOffset.current.y = e.nativeEvent.contentOffset.y;
             (window as any).__workspaceScroll = { ...scrollOffset.current };
@@ -546,6 +568,7 @@ export default function Workspace() {
                         isLast={bi === stack.blocks.length - 1}
                         isDragging={isDragging}
                         isActive={activeBlockId === block.id}
+                        isBracketHovered={bracketHoverId === block.id}
                         onEventTap={isTouchEvent(block)
                           ? () => handleEventTap(block, stack.blocks, bi)
                           : undefined}

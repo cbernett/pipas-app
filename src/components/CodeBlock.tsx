@@ -22,6 +22,7 @@ interface Props {
   isDragging?: boolean;
   isActive?: boolean;
   inBracket?: boolean;
+  isBracketHovered?: boolean;
   onEventTap?: () => void;
   onBlockTap?: () => void;
 }
@@ -46,7 +47,7 @@ function EventBlock({ block, preview, isDragging, isActive, onEventTap, onBlockT
       isDragging && styles.bodyDragging,
       isActive   && styles.bodyActive,
     ]}>
-      <BlockLabel parts={parts} />
+      <BlockLabel blockId={block.id} parts={parts} />
     </View>
   );
 
@@ -72,13 +73,13 @@ function StackBlock({ block, preview, isDragging, isActive, inBracket, onEventTa
   const body = (
     <View style={[
       styles.body, { backgroundColor: block.color },
-      inBracket && styles.bodyInBracket,
+      inBracket && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, shadowOpacity: 0, elevation: 0 },
       isDragging && styles.bodyDragging,
       isActive   && styles.bodyActive,
     ]}>
       {/* Indent slot: workspace-bg coloured so tab from above fills it */}
       {!preview && <View style={styles.indent} />}
-      <BlockLabel parts={parts} />
+      <BlockLabel blockId={block.id} parts={parts} />
     </View>
   );
 
@@ -115,7 +116,7 @@ function Tab({ color }: { color: string }) {
 // Their indents are at ARM_W + TAB_OFFSET from the bracket's left edge.
 const BRACKET_ARM_W = 20;
 
-function BracketBlock({ block, preview, isActive, parts }: Props & { parts: any[] }) {
+function BracketBlock({ block, preview, isActive, isBracketHovered, parts }: Props & { parts: any[] }) {
   const inner    = block.innerBlocks ?? [];
   const hasInner = inner.length > 0;
 
@@ -128,7 +129,7 @@ function BracketBlock({ block, preview, isActive, parts }: Props & { parts: any[
       {/* Top bar */}
       <View style={[styles.bracketTop, { backgroundColor: block.color }, isActive && styles.bodyActive]}>
         {!preview && <View style={styles.indent} />}
-        <BlockLabel parts={parts} />
+        <BlockLabel blockId={block.id} parts={parts} />
       </View>
 
       {/* Tab below top bar — offset to align with inner blocks' indents.
@@ -143,11 +144,7 @@ function BracketBlock({ block, preview, isActive, parts }: Props & { parts: any[
           the first inner block's indent. zIndex:1 so its children stack correctly. */}
       <View style={[styles.bracketBody, { marginTop: preview ? 0 : -TAB_H, zIndex: 1 }]}>
         <View style={[styles.bracketArm, { backgroundColor: block.color }]} />
-        {/* Concave quarter-circle corners — WS_BG overlays that make the
-            inner top-left and bottom-left of the C look curved inward */}
-        {!preview && <View style={styles.bracketConcaveTop} />}
-        {!preview && <View style={styles.bracketConcaveBottom} />}
-        <View style={styles.bracketInner}>
+        <View style={[styles.bracketInner, isBracketHovered && styles.bracketInnerHovered]}>
           {hasInner
             ? inner.map((ib, i) => (
                 <View
@@ -162,7 +159,7 @@ function BracketBlock({ block, preview, isActive, parts }: Props & { parts: any[
               ))
             : (
                 // Empty slot — spacer only, no dashed border
-                <View style={styles.bracketSlotEmpty} />
+                <View style={[styles.bracketSlotEmpty, isBracketHovered && styles.bracketSlotHovered]} />
               )
           }
         </View>
@@ -176,7 +173,6 @@ function BracketBlock({ block, preview, isActive, parts }: Props & { parts: any[
         hasInner && !preview && { marginTop: -TAB_H },
       ]}>
         <View style={[styles.indent, { left: innerTabLeft }]} />
-        <Text style={styles.returnArrow}>↩</Text>
       </View>
 
       {!preview && (
@@ -188,34 +184,44 @@ function BracketBlock({ block, preview, isActive, parts }: Props & { parts: any[
   );
 }
 
+// ─── Live param store ─────────────────────────────────────────────────────────
+// Maps `${blockId}_${paramIdx}` → current string value.
+// NumberBubble writes here on every change; AppContext reads here for execution.
+export const liveParamValues = new Map<string, string>();
+
 // ─── Label renderer ───────────────────────────────────────────────────────────
 
-function BlockLabel({ parts }: { parts: Array<string | BlockParamDef> }) {
+function BlockLabel({ blockId, parts }: { blockId: string; parts: Array<string | BlockParamDef> }) {
   return (
     <View style={styles.labelRow}>
       {parts.map((part, i) => {
         if (typeof part === 'string') return <Text key={i} style={styles.labelText}>{part}</Text>;
-        if (part.type === 'number') return <NumberBubble key={i} value={part.value} />;
-        return <DropdownBubble key={i} value={part.value} options={part.options} />;
+        if (part.type === 'number') return <NumberBubble key={i} blockId={blockId} paramIdx={i} value={part.value} />;
+        return <DropdownBubble key={i} blockId={blockId} paramIdx={i} value={part.value} options={part.options} />;
       })}
     </View>
   );
 }
 
-function NumberBubble({ value }: { value: string }) {
-  const [val, setVal] = useState(value);
+function NumberBubble({ blockId, paramIdx, value }: { blockId: string; paramIdx: number; value: string }) {
+  const liveKey = `${blockId}_${paramIdx}`;
+  const [val, setVal] = useState(() => liveParamValues.get(liveKey) ?? value);
   const w = Math.max(32, val.length * 12 + 16);
+  const handleChange = (v: string) => {
+    setVal(v);
+    liveParamValues.set(liveKey, v);
+  };
   return (
     <View style={[styles.numBubble, { width: w }]}>
       <TextInput
-        style={styles.numInput} value={val} onChangeText={setVal}
+        style={styles.numInput} value={val} onChangeText={handleChange}
         keyboardType="numeric" selectTextOnFocus
       />
     </View>
   );
 }
 
-function DropdownBubble({ value, options }: { value: string; options?: string[] }) {
+function DropdownBubble({ blockId: _blockId, paramIdx: _paramIdx, value, options }: { blockId: string; paramIdx: number; value: string; options?: string[] }) {
   const [val, setVal]   = useState(value);
   const [open, setOpen] = useState(false);
   const [pos, setPos]   = useState({ x: 0, y: 0 });
@@ -281,7 +287,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     paddingTop: TAB_H + 6,
     paddingBottom: 8, paddingHorizontal: 16,
-    borderRadius: BLOCK_R,
+    borderTopLeftRadius: BLOCK_R,
+    borderTopRightRadius: BLOCK_R,
+    borderBottomLeftRadius: BLOCK_R,
+    borderBottomRightRadius: BLOCK_R,
     gap: 6,
     // No vertical shadow — would create a visible line between body and tab
     shadowColor: '#000', shadowOffset: { width: 0, height: 0 },
@@ -326,6 +335,13 @@ const styles = StyleSheet.create({
   bracketBody:  { flexDirection: 'row' },
   bracketArm:   { width: BRACKET_ARM_W },
   bracketInner: { flex: 1 },
+  bracketInnerHovered: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderTopLeftRadius: 0,
+    borderBottomLeftRadius: 0,
+    borderTopRightRadius: 6,
+    borderBottomRightRadius: 6,
+  },
 
   // Concave inner corners: WS_BG quarter-circles positioned at the two
   // inner-left junctions of the C-shape (where arm meets inner area).
@@ -357,6 +373,13 @@ const styles = StyleSheet.create({
   // Empty inner slot — just reserves space, no visible border
   bracketSlotEmpty: {
     height: TAB_H + 6 + 20 + 8,   // same height as one block body
+  },
+  bracketSlotHovered: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderTopLeftRadius: 0,
+    borderBottomLeftRadius: 0,
+    borderTopRightRadius: 6,
+    borderBottomRightRadius: 6,
   },
 
   bracketBottom: {

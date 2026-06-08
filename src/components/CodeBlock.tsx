@@ -251,7 +251,10 @@ function DropdownBubble({ value, options }: { value: string; options?: string[] 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  wrapper: { alignSelf: 'flex-start' },
+  // touch-action: none tells the browser not to claim this element's pointer
+  // events for native scroll/pan — required for custom pointer-event drag to
+  // work on the first grab without the browser intercepting the gesture.
+  wrapper: { alignSelf: 'flex-start', touchAction: 'none' } as any,
 
   // ── Indent: workspace-bg colour so the tab from above "fills" the void
   indent: {

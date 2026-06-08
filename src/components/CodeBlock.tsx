@@ -21,6 +21,7 @@ interface Props {
   preview?: boolean;
   isDragging?: boolean;
   isActive?: boolean;
+  inBracket?: boolean;
   onEventTap?: () => void;
   onBlockTap?: () => void;
 }
@@ -67,10 +68,11 @@ function EventBlock({ block, preview, isDragging, isActive, onEventTap, onBlockT
 
 // ─── Stack block ──────────────────────────────────────────────────────────────
 
-function StackBlock({ block, preview, isDragging, isActive, onEventTap, onBlockTap, parts }: Props & { parts: any[] }) {
+function StackBlock({ block, preview, isDragging, isActive, inBracket, onEventTap, onBlockTap, parts }: Props & { parts: any[] }) {
   const body = (
     <View style={[
       styles.body, { backgroundColor: block.color },
+      inBracket && styles.bodyInBracket,
       isDragging && styles.bodyDragging,
       isActive   && styles.bodyActive,
     ]}>
@@ -141,6 +143,10 @@ function BracketBlock({ block, preview, isActive, parts }: Props & { parts: any[
           the first inner block's indent. zIndex:1 so its children stack correctly. */}
       <View style={[styles.bracketBody, { marginTop: preview ? 0 : -TAB_H, zIndex: 1 }]}>
         <View style={[styles.bracketArm, { backgroundColor: block.color }]} />
+        {/* Concave quarter-circle corners — WS_BG overlays that make the
+            inner top-left and bottom-left of the C look curved inward */}
+        {!preview && <View style={styles.bracketConcaveTop} />}
+        {!preview && <View style={styles.bracketConcaveBottom} />}
         <View style={styles.bracketInner}>
           {hasInner
             ? inner.map((ib, i) => (
@@ -151,7 +157,7 @@ function BracketBlock({ block, preview, isActive, parts }: Props & { parts: any[
                     zIndex: inner.length - i + 1,
                   }}
                 >
-                  <CodeBlock block={ib} isFirst={i === 0} isLast={i === inner.length - 1} />
+                  <CodeBlock block={ib} isFirst={i === 0} isLast={i === inner.length - 1} inBracket />
                 </View>
               ))
             : (
@@ -281,14 +287,16 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.15, shadowRadius: 3, elevation: 2,
   },
+  // Inside a bracket: no left border radius so block sits flush against the arm
+  bodyInBracket: { borderTopLeftRadius: 0, borderBottomLeftRadius: 0 },
   bodyDragging: { shadowOpacity: 0.4, shadowRadius: 12, elevation: 10 },
   bodyActive: {
     borderWidth: 2.5, borderColor: 'rgba(255,255,255,0.9)',
     shadowColor: '#FFF', shadowOpacity: 0.5, shadowRadius: 10,
   },
 
-  // ── Tab — no inner shadow, pure colour so it's seamless with the body
-  tabRow: { paddingLeft: TAB_OFFSET },
+  // ── Tab — pull up 2px to close the shadow gap between body and tab
+  tabRow: { paddingLeft: TAB_OFFSET, marginTop: -2 },
   tab: {
     width: TAB_W, height: TAB_H,
     borderBottomLeftRadius: 6, borderBottomRightRadius: 6,
@@ -316,8 +324,35 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 6,
   },
   bracketBody:  { flexDirection: 'row' },
-  bracketArm:   { width: 20 },
+  bracketArm:   { width: BRACKET_ARM_W },
   bracketInner: { flex: 1 },
+
+  // Concave inner corners: WS_BG quarter-circles positioned at the two
+  // inner-left junctions of the C-shape (where arm meets inner area).
+  // borderTopLeftRadius / borderBottomLeftRadius clips the WS_BG square into
+  // a quarter-circle that makes the corner appear curved inward.
+  // WS_BG quarter-circle overlays at the two inner-left junctions of the C.
+  // The trick: a R×R square clipped to a quarter-circle using border-radius.
+  //   borderBottomRightRadius on a R×R square → visible area = top-left quarter-circle
+  //   borderTopRightRadius    on a R×R square → visible area = bottom-left quarter-circle
+  // These sit above inner blocks (zIndex:100) so the WS_BG arc is always visible,
+  // making the bracket's inner left corners appear concave.
+  bracketConcaveTop: {
+    position: 'absolute',
+    top: 0, left: BRACKET_ARM_W,
+    width: BLOCK_R, height: BLOCK_R,
+    backgroundColor: WS_BG,
+    borderBottomRightRadius: BLOCK_R,
+    zIndex: 100,
+  } as any,
+  bracketConcaveBottom: {
+    position: 'absolute',
+    bottom: TAB_H, left: BRACKET_ARM_W,
+    width: BLOCK_R, height: BLOCK_R,
+    backgroundColor: WS_BG,
+    borderTopRightRadius: BLOCK_R,
+    zIndex: 100,
+  } as any,
 
   // Empty inner slot — just reserves space, no visible border
   bracketSlotEmpty: {

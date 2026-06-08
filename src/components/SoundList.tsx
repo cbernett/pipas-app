@@ -60,7 +60,18 @@ export default function SoundList({ onRecord, onSelectSound }: Props) {
             {/* Waveform preview (decorative) */}
             <View style={styles.waveform}>
               {[3, 6, 10, 7, 12, 5, 8, 11, 4, 9, 6].map((h, i) => (
-                <View key={i} style={[styles.bar, { height: h * 2, backgroundColor: playingId === sound.id ? '#6B4FBB' : '#CCC' }]} />
+                <View
+                  key={i}
+                  style={[
+                    styles.bar,
+                    {
+                      height: h * 2,
+                      backgroundColor: playingId === sound.id
+                        ? 'rgba(255,255,255,0.9)'
+                        : 'rgba(255,255,255,0.25)',
+                    },
+                  ]}
+                />
               ))}
             </View>
 
@@ -70,19 +81,21 @@ export default function SoundList({ onRecord, onSelectSound }: Props) {
             </View>
 
             <TouchableOpacity
-              style={[styles.iconBtn, { backgroundColor: playingId === sound.id ? '#6B4FBB' : '#F0F0F0' }]}
+              style={[styles.iconBtn, { backgroundColor: playingId === sound.id ? '#6B4FBB' : 'rgba(255,255,255,0.12)' }]}
               onPress={() => handlePlay(sound)}
             >
-              <Text style={{ color: playingId === sound.id ? '#FFF' : '#333', fontSize: 14 }}>
+              <Text style={{ color: '#FFF', fontSize: 14 }}>
                 {playingId === sound.id ? '■' : '▶'}
               </Text>
             </TouchableOpacity>
 
+            {/* Delete — small x circle at top-right corner */}
             <TouchableOpacity
-              style={[styles.iconBtn, { backgroundColor: '#FFF0F0' }]}
+              style={styles.deleteBtn}
               onPress={() => handleDelete(sound.id)}
+              hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
             >
-              <Text style={{ color: '#EF4444', fontSize: 16 }}>✕</Text>
+              <Text style={styles.deleteBtnText}>✕</Text>
             </TouchableOpacity>
           </TouchableOpacity>
         ))}
@@ -96,7 +109,7 @@ export default function SoundList({ onRecord, onSelectSound }: Props) {
         </TouchableOpacity>
         <TouchableOpacity style={[styles.actionBtn, styles.actionBtnSecondary]} activeOpacity={0.8}>
           <Text style={styles.actionBtnIcon}>📂</Text>
-          <Text style={[styles.actionBtnText, { color: '#6B4FBB' }]}>Importar Som</Text>
+          <Text style={[styles.actionBtnText, styles.actionBtnSecondaryText]}>Importar Som</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -106,7 +119,7 @@ export default function SoundList({ onRecord, onSelectSound }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F8FC',
+    backgroundColor: '#1A1F2E',
   },
   list: {
     padding: 16,
@@ -115,15 +128,11 @@ const styles = StyleSheet.create({
   soundRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#13172A',
     borderRadius: 14,
     padding: 14,
+    paddingRight: 40,   // space so play btn doesn't sit under delete circle
     gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
   },
   waveform: {
     flexDirection: 'row',
@@ -141,11 +150,11 @@ const styles = StyleSheet.create({
   soundName: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#1A1A2E',
+    color: '#FFFFFF',
   },
   soundDuration: {
     fontSize: 12,
-    color: '#999',
+    color: 'rgba(255,255,255,0.4)',
     marginTop: 2,
   },
   iconBtn: {
@@ -155,13 +164,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  deleteBtn: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteBtnText: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 10,
+    fontWeight: '700',
+  },
   actions: {
     flexDirection: 'row',
     padding: 16,
     gap: 12,
     borderTopWidth: 1,
-    borderTopColor: '#EFEFEF',
-    backgroundColor: '#FFF',
+    borderTopColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: '#1A1F2E',
   },
   actionBtn: {
     flex: 1,
@@ -174,7 +199,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   actionBtnSecondary: {
-    backgroundColor: '#F0EEFF',
+    backgroundColor: 'rgba(107,79,187,0.25)',
   },
   actionBtnIcon: {
     fontSize: 18,
@@ -183,5 +208,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: '#FFF',
+  },
+  actionBtnSecondaryText: {
+    color: 'rgba(255,255,255,0.8)',
   },
 });

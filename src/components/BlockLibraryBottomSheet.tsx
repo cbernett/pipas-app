@@ -73,7 +73,7 @@ export default function BlockLibraryBottomSheet() {
         ref={scrollRef}
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
-        scrollEnabled={false}
+        scrollEnabled={true}
       >
         {CATEGORIES.map((cat) => (
           <CategoryBand
@@ -95,12 +95,18 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: '#1C1F2B',
     overflow: 'hidden',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.12)',
+    borderLeftWidth: 1,
+    borderLeftColor: 'rgba(255,255,255,0.08)',
+    borderRightWidth: 1,
+    borderRightColor: 'rgba(255,255,255,0.08)',
   },
   handleArea: {
     height: HANDLE_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    gap: 4,
     flexShrink: 0,
   },
   handle: {

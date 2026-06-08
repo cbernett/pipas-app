@@ -91,7 +91,7 @@ export default function SoundSelected({ sound, onBack, onDelete }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F8FC',
+    backgroundColor: '#1A1F2E',
     padding: 24,
     alignItems: 'center',
   },

@@ -13,7 +13,7 @@ function AppContent() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle="light-content" backgroundColor="#000000" />
       <AppHeader />
       <View style={styles.content}>
         {activeTab === 'codigo' ? <CodigoScreen /> : <SonsScreen />}
@@ -38,7 +38,7 @@ export default function App() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#1A1F2E',
   },
   content: {
     flex: 1,

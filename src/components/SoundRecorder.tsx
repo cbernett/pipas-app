@@ -110,7 +110,7 @@ export default function SoundRecorder({ onCancel, onSave }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F8FC',
+    backgroundColor: '#1A1F2E',
     alignItems: 'center',
     paddingTop: 40,
     paddingHorizontal: 24,

@@ -11,8 +11,15 @@ export default function AppHeader() {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.row}>
-        {/* Left: tabs */}
-        <View style={styles.tabs}>
+        {/* Left: logo */}
+        <Image
+          source={require('../../assets/pipas_loog_app_header.png')}
+          style={styles.logoImage}
+          resizeMode="contain"
+        />
+
+        {/* Center: tabs (absolutely centred) */}
+        <View style={styles.tabsCenter} pointerEvents="box-none">
           <TouchableOpacity
             style={[styles.tab, activeTab === 'codigo' && styles.tabActive]}
             onPress={() => setActiveTab('codigo')}
@@ -33,15 +40,6 @@ export default function AppHeader() {
           </TouchableOpacity>
         </View>
 
-        {/* Center: logo */}
-        <View style={styles.logoContainer}>
-          <Image
-            source={require('../../assets/pipas_loog_app_header.png')}
-            style={styles.logoImage}
-            resizeMode="contain"
-          />
-        </View>
-
         {/* Right: connect button */}
         <View style={styles.actions}>
           <BoardStatusButton />
@@ -60,20 +58,33 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingHorizontal: 12,
-    paddingTop: 28,
-    paddingBottom: 0,   // tab underlines flush with workspace border
+    paddingLeft: 16,
+    paddingRight: 12,
+    paddingTop: 12,
+    paddingBottom: 0,
   },
 
-  // Left — tabs flush to bottom
-  tabs: {
-    flex: 1,
-    flexDirection: 'row',
+  // Left — logo
+  logoImage: {
+    width: 88,
+    height: 30,
+    marginBottom: 13,
   },
+
+  // Center — tabs absolutely centred
+  tabsCenter: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+  } as any,
   tab: {
     paddingHorizontal: 14,
     paddingTop: 4,
-    paddingBottom: 16,  // pushes text up to align with logo & connect button
+    paddingBottom: 16,
     marginRight: 2,
     borderBottomWidth: 3,
     borderBottomColor: 'transparent',
@@ -88,21 +99,6 @@ const styles = StyleSheet.create({
   },
   tabTextActive: {
     color: '#FFF',
-  },
-
-  // Center — logo
-  logoContainer: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: 'center',
-    pointerEvents: 'none',
-  } as any,
-  logoImage: {
-    width: 160,
-    height: 52,
-    marginBottom: 12,
   },
 
   // Right — bottom-aligned actions

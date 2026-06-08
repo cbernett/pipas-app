@@ -123,22 +123,52 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!blocks.length) return;
     isExecutingRef.current = true;
     runAbortRef.current = false;
-    const flat = flattenBlocks(blocks);
 
-    for (const block of flat) {
-      if (runAbortRef.current) break;
-      setActiveBlockId(block.id);
-      await executeBlock(block);
-      if (runAbortRef.current) break;
-      await new Promise<void>((resolve) => {
-        const dur = blockDuration(block);
-        const t   = setTimeout(resolve, dur);
-        const poll = setInterval(() => {
-          if (runAbortRef.current) { clearTimeout(t); clearInterval(poll); resolve(); }
-        }, 50);
-        setTimeout(() => clearInterval(poll), dur + 100);
-      });
-    }
+    // Recursive runner — handles bracket blocks (repita / sempre / se)
+    const runBlocks = async (bs: WorkspaceBlock[]): Promise<void> => {
+      for (const block of bs) {
+        if (runAbortRef.current) break;
+
+        // ── repita N vezes ──────────────────────────────────────────────
+        if (block.defId === 'ctrl_2') {
+          const n = parseInt(block.label.match(/\d+/)?.[0] ?? '10', 10) || 10;
+          for (let i = 0; i < n; i++) {
+            if (runAbortRef.current) break;
+            await runBlocks(block.innerBlocks ?? []);
+          }
+          continue;
+        }
+
+        // ── sempre (loop forever) ───────────────────────────────────────
+        if (block.defId === 'ctrl_3') {
+          while (!runAbortRef.current) {
+            await runBlocks(block.innerBlocks ?? []);
+          }
+          continue;
+        }
+
+        // ── se então / se senão — run inner once (condition TBD) ────────
+        if (block.defId === 'ctrl_4') {
+          await runBlocks(block.innerBlocks ?? []);
+          continue;
+        }
+
+        // ── regular action block ────────────────────────────────────────
+        setActiveBlockId(block.id);
+        await executeBlock(block);
+        if (runAbortRef.current) break;
+        await new Promise<void>((resolve) => {
+          const dur  = blockDuration(block);
+          const t    = setTimeout(resolve, dur);
+          const poll = setInterval(() => {
+            if (runAbortRef.current) { clearTimeout(t); clearInterval(poll); resolve(); }
+          }, 50);
+          setTimeout(() => clearInterval(poll), dur + 100);
+        });
+      }
+    };
+
+    await runBlocks(blocks);
 
     isExecutingRef.current = false;
     if (!runAbortRef.current) setActiveBlockId(null);

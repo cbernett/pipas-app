@@ -109,28 +109,36 @@ function Tab({ color }: { color: string }) {
 
 // ─── Bracket / C-block ────────────────────────────────────────────────────────
 
+// Width of the bracket arm column — inner blocks sit to the right of this.
+// Their indents are at ARM_W + TAB_OFFSET from the bracket's left edge.
+const BRACKET_ARM_W = 20;
+
 function BracketBlock({ block, preview, isActive, parts }: Props & { parts: any[] }) {
-  const inner = block.innerBlocks ?? [];
+  const inner    = block.innerBlocks ?? [];
   const hasInner = inner.length > 0;
+
+  // The bracketTop's tab must land at x = BRACKET_ARM_W + TAB_OFFSET from
+  // the bracket's left, which equals where the first inner block's indent is.
+  const innerTabLeft = BRACKET_ARM_W + TAB_OFFSET; // 40px
 
   return (
     <View style={styles.wrapper}>
-      {/* Top bar — same body style as StackBlock */}
+      {/* Top bar */}
       <View style={[styles.bracketTop, { backgroundColor: block.color }, isActive && styles.bodyActive]}>
         {!preview && <View style={styles.indent} />}
         <BlockLabel parts={parts} />
       </View>
 
-      {/* Tab below top bar.  zIndex:2 so it renders ON TOP of the first inner
-          block's indent — same trick Workspace uses between stacked blocks. */}
+      {/* Tab below top bar — offset to align with inner blocks' indents.
+          zIndex must exceed inner block zIndices so it renders on top. */}
       {!preview && (
-        <View style={[styles.tabRow, { zIndex: 2 }]}>
+        <View style={{ paddingLeft: innerTabLeft, zIndex: inner.length + 2 }}>
           <Tab color={block.color} />
         </View>
       )}
 
-      {/* C-body.  marginTop:-TAB_H overlaps the tab above (first inner block's
-          indent receives it).  zIndex:1 keeps last-block tab above bracketBottom. */}
+      {/* C-body: marginTop:-TAB_H pulls the body up so the tab above overlaps
+          the first inner block's indent. zIndex:1 so its children stack correctly. */}
       <View style={[styles.bracketBody, { marginTop: preview ? 0 : -TAB_H, zIndex: 1 }]}>
         <View style={[styles.bracketArm, { backgroundColor: block.color }]} />
         <View style={styles.bracketInner}>
@@ -139,8 +147,6 @@ function BracketBlock({ block, preview, isActive, parts }: Props & { parts: any[
                 <View
                   key={ib.id}
                   style={{
-                    // First block: top-bar tab already overlaps (via bracketBody marginTop).
-                    // Each subsequent block overlaps the previous tab, just like a stack.
                     marginTop: i === 0 ? 0 : -TAB_H,
                     zIndex: inner.length - i + 1,
                   }}
@@ -149,23 +155,21 @@ function BracketBlock({ block, preview, isActive, parts }: Props & { parts: any[
                 </View>
               ))
             : (
-                // Placeholder — styled to look exactly like one block body
-                <View style={[styles.bracketSlot, { borderColor: block.color }]}>
-                  <View style={styles.indent} />
-                </View>
+                // Empty slot — spacer only, no dashed border
+                <View style={styles.bracketSlotEmpty} />
               )
           }
         </View>
       </View>
 
-      {/* Bottom bar.  zIndex:0 so last inner block's tab (in bracketBody, zIndex:1)
-          shows through the indent notch here. */}
+      {/* Bottom bar — its indent receives the last inner block's outgoing tab.
+          Indent positioned at innerTabLeft so it aligns with the inner stack. */}
       <View style={[
         styles.bracketBottom,
         { backgroundColor: block.color, zIndex: 0 },
         hasInner && !preview && { marginTop: -TAB_H },
       ]}>
-        <View style={styles.indent} />
+        <View style={[styles.indent, { left: innerTabLeft }]} />
         <Text style={styles.returnArrow}>↩</Text>
       </View>
 
@@ -315,15 +319,9 @@ const styles = StyleSheet.create({
   bracketArm:   { width: 20 },
   bracketInner: { flex: 1 },
 
-  // Placeholder slot — same dimensions as one block body so a dropped block
-  // fills the space exactly.
-  bracketSlot: {
-    position: 'relative',
-    height: TAB_H + 6 + 20 + 8,   // paddingTop + label + paddingBottom = one block body
-    borderRadius: BLOCK_R,
-    borderWidth: 2,
-    borderStyle: 'dashed',
-    opacity: 0.5,
+  // Empty inner slot — just reserves space, no visible border
+  bracketSlotEmpty: {
+    height: TAB_H + 6 + 20 + 8,   // same height as one block body
   },
 
   bracketBottom: {

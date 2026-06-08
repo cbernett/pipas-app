@@ -1,5 +1,6 @@
 import React, { useRef, useState, useCallback, useEffect, useLayoutEffect } from 'react';
 import { View, ScrollView, Text, StyleSheet, Animated, TouchableOpacity } from 'react-native';
+import { flushSync } from 'react-dom';
 import { useApp, WorkspaceBlock, BlockStack } from '../context/AppContext';
 import CodeBlock, { TAB_H, TAB_OFFSET } from './CodeBlock';
 
@@ -109,13 +110,15 @@ export default function Workspace() {
   }, [accumHeight]);
 
   // ── Bracket inner slot snap ─────────────────────────────────────────────
+  // dragX/dragY should be the cursor canvas position (not block top-left) so
+  // the user can reliably point at the bracket interior to trigger the snap.
   const findBracketSnap = useCallback((dragStack: BlockStack, dragX: number, dragY: number):
     { stackId: string; bracketBlockId: string } | null => {
     const BRACKET_DEF_IDS = ['ctrl_2', 'ctrl_3', 'ctrl_4'];
-    // bracketTop body height (paddingTop + label + paddingBottom ≈ 43px)
-    const BRACKET_TOP_H   = 43;
-    // bracketBottom height (TAB_H + 20 = 29px)
-    const BRACKET_BOT_H   = 29;
+    // Detection zone: from just below the bracketTop label to the bottom of the
+    // entire bracket block (inclusive of bracketBottom).  Generous hit zone so
+    // the user doesn't have to land perfectly in the narrow inner slot.
+    const BRACKET_TOP_H   = 36; // start of inner zone (a little above the visual top)
     const ARM_W           = 20;
 
     for (const s of localStacksRef.current) {
@@ -126,11 +129,11 @@ export default function Workspace() {
         const b = s.blocks[bi];
         if (BRACKET_DEF_IDS.includes(b.defId)) {
           // Use || fallback so a 0 (unmeasured) height also gets the default
-          const blockH   = heights[bi] || 115;
+          const blockH   = heights[bi] || 120;
           const innerTop = s.y + acc + BRACKET_TOP_H;
-          const innerBot = s.y + acc + blockH - BRACKET_BOT_H;
+          const innerBot = s.y + acc + blockH; // include full bracket height
           const innerLeft  = s.x + ARM_W;
-          const innerRight = s.x + 400;
+          const innerRight = s.x + 500;
           if (dragX >= innerLeft && dragX <= innerRight &&
               dragY >= innerTop  && dragY <= innerBot) {
             return { stackId: s.id, bracketBlockId: b.id };
@@ -226,11 +229,12 @@ export default function Workspace() {
               : s)
             .concat([newStack]);
           localStacksRef.current = next;
-          setStacks(next);
           dragAnimX.setValue(extractX);
           dragAnimY.setValue(extractY);
           draggingIdRef.current = newId;
-          setDraggingId(newId);
+          // flushSync: re-render completes synchronously before onDown returns,
+          // so the Animated.View is already in drag mode when the user moves.
+          flushSync(() => { setStacks(next); setDraggingId(newId); });
           pendingDrag.current = {
             stackId: newId, blockIdx: 0,
             startMouse: { x: e.clientX, y: e.clientY },
@@ -243,6 +247,7 @@ export default function Workspace() {
       // ── Regular drag — split mid-stack if needed ───────────────────────
       let dragStackId = stack.id;
       let startPos    = { x: stack.x, y: stack.y + accumHeight(stack.id, blockIdx) };
+      let nextStacks: BlockStack[] | null = null;
 
       if (blockIdx > 0) {
         const newId = `sp_${Date.now()}`;
@@ -253,18 +258,22 @@ export default function Workspace() {
           blocks: stack.blocks.slice(blockIdx),
         };
         const topStack = { ...stack, blocks: stack.blocks.slice(0, blockIdx) };
-        const next = localStacksRef.current
+        nextStacks = localStacksRef.current
           .map(s => s.id === stack.id ? topStack : s)
           .concat([newStack]);
-        localStacksRef.current = next;
-        setStacks(next);
+        localStacksRef.current = nextStacks;
         startPos = { x: newStack.x, y: newStack.y };
       }
 
       dragAnimX.setValue(startPos.x);
       dragAnimY.setValue(startPos.y);
       draggingIdRef.current = dragStackId;
-      setDraggingId(dragStackId);
+      // flushSync: re-render completes synchronously before onDown returns,
+      // so the Animated.View is already in drag mode when the user moves.
+      flushSync(() => {
+        if (nextStacks) setStacks(nextStacks);
+        setDraggingId(dragStackId);
+      });
       pendingDrag.current = {
         stackId: dragStackId, blockIdx: 0,
         startMouse: { x: e.clientX, y: e.clientY },
@@ -358,9 +367,10 @@ export default function Workspace() {
         // ── TAP: roll back split, dispatch tap handler manually ──────────
         hasMovedRef.current = false;
         if (preDragStacks.current) {
-          localStacksRef.current = preDragStacks.current;
-          setStacks(preDragStacks.current);
+          const restored = preDragStacks.current;
+          localStacksRef.current = restored;
           preDragStacks.current = null;
+          flushSync(() => { setStacks(restored); setDraggingId(null); });
         }
         // Manually fire the tap handler
         const tb = tappedBlock.current;
@@ -391,7 +401,10 @@ export default function Workspace() {
       const dragStk = stks.find(s => s.id === dsId);
 
       if (dragStk) {
-        const bracketSnap = findBracketSnap(dragStk, newX, newY);
+        // Use cursor canvas position for bracket detection — the user is pointing
+        // at where they want the block to go, not at the dragged block's top-left.
+        const cursorCanvas = toCanvas(e.clientX, e.clientY);
+        const bracketSnap = findBracketSnap(dragStk, cursorCanvas.x, cursorCanvas.y);
         const snap        = !bracketSnap ? findSnap(dragStk, newX, newY) : null;
         let next: BlockStack[];
 

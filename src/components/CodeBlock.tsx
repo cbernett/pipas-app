@@ -112,46 +112,58 @@ function Tab({ color }: { color: string }) {
 function BracketBlock({ block, preview, isActive, parts }: Props & { parts: any[] }) {
   const inner = block.innerBlocks ?? [];
   const hasInner = inner.length > 0;
+
   return (
     <View style={styles.wrapper}>
-      {/* Top bar */}
+      {/* Top bar — same body style as StackBlock */}
       <View style={[styles.bracketTop, { backgroundColor: block.color }, isActive && styles.bodyActive]}>
         {!preview && <View style={styles.indent} />}
         <BlockLabel parts={parts} />
       </View>
 
-      {/* C-body */}
-      <View style={styles.bracketBody}>
-        <View style={[styles.bracketArm, { backgroundColor: block.color }]} />
-        <View style={styles.bracketInnerCol}>
-          {/* Tab protruding DOWN — horizontally aligned with block indents, sits on top of first block's indent */}
-          <View style={[styles.bracketInnerTab, { backgroundColor: block.color }]} />
+      {/* Tab below top bar.  zIndex:2 so it renders ON TOP of the first inner
+          block's indent — same trick Workspace uses between stacked blocks. */}
+      {!preview && (
+        <View style={[styles.tabRow, { zIndex: 2 }]}>
+          <Tab color={block.color} />
+        </View>
+      )}
 
-          {/* Inner content starts -TAB_H up so first block's indent overlaps bracketInnerTab */}
-          <View style={styles.bracketInner}>
-            {hasInner
-              ? inner.map((ib, i) => (
-                  <View
-                    key={ib.id}
-                    style={{
-                      marginTop: -TAB_H,                       // every block overlaps previous connector by TAB_H
-                      zIndex: inner.length - i + 2,            // earlier blocks on top (same as Workspace stack)
-                    }}
-                  >
-                    <CodeBlock block={ib} isFirst={i === 0} isLast={i === inner.length - 1} />
-                  </View>
-                ))
-              : <View style={[styles.bracketSlot, { borderColor: block.color }]} />
-            }
-          </View>
+      {/* C-body.  marginTop:-TAB_H overlaps the tab above (first inner block's
+          indent receives it).  zIndex:1 keeps last-block tab above bracketBottom. */}
+      <View style={[styles.bracketBody, { marginTop: preview ? 0 : -TAB_H, zIndex: 1 }]}>
+        <View style={[styles.bracketArm, { backgroundColor: block.color }]} />
+        <View style={styles.bracketInner}>
+          {hasInner
+            ? inner.map((ib, i) => (
+                <View
+                  key={ib.id}
+                  style={{
+                    // First block: top-bar tab already overlaps (via bracketBody marginTop).
+                    // Each subsequent block overlaps the previous tab, just like a stack.
+                    marginTop: i === 0 ? 0 : -TAB_H,
+                    zIndex: inner.length - i + 1,
+                  }}
+                >
+                  <CodeBlock block={ib} isFirst={i === 0} isLast={i === inner.length - 1} />
+                </View>
+              ))
+            : (
+                // Placeholder — styled to look exactly like one block body
+                <View style={[styles.bracketSlot, { borderColor: block.color }]}>
+                  <View style={styles.indent} />
+                </View>
+              )
+          }
         </View>
       </View>
 
-      {/* Bottom bar — overlaps last inner block's outgoing tab by TAB_H */}
+      {/* Bottom bar.  zIndex:0 so last inner block's tab (in bracketBody, zIndex:1)
+          shows through the indent notch here. */}
       <View style={[
         styles.bracketBottom,
-        { backgroundColor: block.color },
-        hasInner && { marginTop: -TAB_H, zIndex: 0 },
+        { backgroundColor: block.color, zIndex: 0 },
+        hasInner && !preview && { marginTop: -TAB_H },
       ]}>
         <View style={styles.indent} />
         <Text style={styles.returnArrow}>↩</Text>
@@ -296,26 +308,24 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: BLOCK_R, borderTopRightRadius: BLOCK_R,
     flexDirection: 'row', alignItems: 'center', gap: 6,
   },
-  bracketBody:     { flexDirection: 'row' },
-  bracketArm:      { width: 20 },
-  bracketInnerCol: { flex: 1 },
-  bracketInnerTab: {
-    marginLeft: TAB_OFFSET,            // aligns with block indent (left: TAB_OFFSET)
-    width: TAB_W, height: TAB_H,
-    borderBottomLeftRadius: 6, borderBottomRightRadius: 6,
-    zIndex: 5,                         // renders on top of first inner block's indent
-  },
-  bracketInner:    { flex: 1 },        // no vertical padding — blocks connect flush
+  bracketBody:  { flexDirection: 'row' },
+  bracketArm:   { width: 20 },
+  bracketInner: { flex: 1 },
+
+  // Placeholder slot — same dimensions as one block body so a dropped block
+  // fills the space exactly.
   bracketSlot: {
-    // Height = default block height (58) minus TAB_H overlap = one block fits exactly
-    height: 49,
-    marginLeft: 8,
-    marginVertical: 4,
-    borderRadius: 8, borderWidth: 2, borderStyle: 'dashed', opacity: 0.4,
+    position: 'relative',
+    height: TAB_H + 6 + 20 + 8,   // paddingTop + label + paddingBottom = one block body
+    borderRadius: BLOCK_R,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    opacity: 0.5,
   },
+
   bracketBottom: {
     position: 'relative',
-    height: TAB_H + 20,               // indent (TAB_H) + return arrow row (20)
+    height: TAB_H + 20,
     borderBottomLeftRadius: BLOCK_R, borderBottomRightRadius: BLOCK_R,
     alignItems: 'center', justifyContent: 'center',
   },

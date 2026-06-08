@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback, useEffect } from 'react';
+import React, { useRef, useState, useCallback, useEffect, useLayoutEffect } from 'react';
 import { View, ScrollView, Text, StyleSheet, Animated, TouchableOpacity } from 'react-native';
 import { useApp, WorkspaceBlock, BlockStack } from '../context/AppContext';
 import CodeBlock, { TAB_H, TAB_OFFSET } from './CodeBlock';
@@ -6,8 +6,8 @@ import CodeBlock, { TAB_H, TAB_OFFSET } from './CodeBlock';
 
 const CANVAS_W   = 2200;
 const CANVAS_H   = 1800;
-const SNAP_D     = 56;   // snap detection radius in px
-const DRAG_MIN   = 8;    // min movement to activate drag
+const SNAP_D     = 30;   // snap detection radius in px
+const DRAG_MIN   = 4;    // min movement to activate drag (lower = more responsive)
 
 function isTouchEvent(b: WorkspaceBlock) {
   return b.category === 'Eventos' ||
@@ -39,6 +39,15 @@ export default function Workspace() {
   } | null>(null);
   const hasMovedRef     = useRef(false);
   const draggedRecently = useRef(false);
+  // Saved before onDown mutates stacks — lets us rollback on tap
+  const preDragStacks   = useRef<BlockStack[] | null>(null);
+  // Which block was pressed, for manual tap dispatch after rollback
+  const tappedBlock     = useRef<{
+    block: WorkspaceBlock;
+    isEvent: boolean;
+    stackBlocks: WorkspaceBlock[];
+    bi: number;
+  } | null>(null);
   const stackHeightsRef = useRef<Record<string, number>>({});          // total stack height
   const blockHeightsRef = useRef<Record<string, number[]>>({});        // [block heights] per stack
   const canvasRef       = useRef<any>(null);
@@ -46,7 +55,9 @@ export default function Workspace() {
   const addStackRef     = useRef(addStack);
   useEffect(() => { addStackRef.current = addStack; }, [addStack]);
 
-  useEffect(() => { localStacksRef.current = displayStacks; }, [displayStacks]);
+  // useLayoutEffect fires synchronously after DOM mutations and before paint,
+  // so localStacksRef is always current by the time the user can interact.
+  useLayoutEffect(() => { localStacksRef.current = displayStacks; }, [displayStacks]);
 
   // ── Canvas offset helper ────────────────────────────────────────────────
   const canvasTopLeft = useCallback((): { x: number; y: number } => {
@@ -101,8 +112,10 @@ export default function Workspace() {
   const findBracketSnap = useCallback((dragStack: BlockStack, dragX: number, dragY: number):
     { stackId: string; bracketBlockId: string } | null => {
     const BRACKET_DEF_IDS = ['ctrl_2', 'ctrl_3', 'ctrl_4'];
-    const BRACKET_TOP_H   = 52;
-    const BRACKET_BOT_H   = 28;
+    // bracketTop body height (paddingTop + label + paddingBottom ≈ 43px)
+    const BRACKET_TOP_H   = 43;
+    // bracketBottom height (TAB_H + 20 = 29px)
+    const BRACKET_BOT_H   = 29;
     const ARM_W           = 20;
 
     for (const s of localStacksRef.current) {
@@ -112,17 +125,18 @@ export default function Workspace() {
       for (let bi = 0; bi < s.blocks.length; bi++) {
         const b = s.blocks[bi];
         if (BRACKET_DEF_IDS.includes(b.defId)) {
-          const blockH   = heights[bi] ?? 140;
+          // Use || fallback so a 0 (unmeasured) height also gets the default
+          const blockH   = heights[bi] || 115;
           const innerTop = s.y + acc + BRACKET_TOP_H;
           const innerBot = s.y + acc + blockH - BRACKET_BOT_H;
           const innerLeft  = s.x + ARM_W;
-          const innerRight = s.x + 360;
+          const innerRight = s.x + 400;
           if (dragX >= innerLeft && dragX <= innerRight &&
               dragY >= innerTop  && dragY <= innerBot) {
             return { stackId: s.id, bracketBlockId: b.id };
           }
         }
-        acc += bi === 0 ? (heights[bi] ?? 58) : ((heights[bi] ?? 58) - TAB_H);
+        acc += bi === 0 ? (heights[bi] || 58) : ((heights[bi] || 58) - TAB_H);
       }
     }
     return null;
@@ -133,8 +147,10 @@ export default function Workspace() {
     const heights = blockHeightsRef.current[stackId] ?? [];
     let acc = 0;
     for (let i = 0; i < heights.length; i++) {
-      // Each block after the first overlaps by TAB_H due to negative marginTop
-      const h = i === 0 ? (heights[i] ?? 58) : ((heights[i] ?? 58) - TAB_H);
+      // Use (height - TAB_H) for ALL blocks so hit zones match visual positions.
+      // Block i's visual top = accumHeight(i) - TAB_H (for i>0). Using height-TAB_H
+      // ensures clicking in block 1's visual area doesn't register as block 0.
+      const h = (heights[i] ?? 58) - TAB_H;
       if (relY < acc + h) return i;
       acc += h;
     }
@@ -159,26 +175,101 @@ export default function Workspace() {
   }, [toCanvas]);
 
   // ── Pointer event system ─────────────────────────────────────────────────
+  //
+  // Key design: split + setDraggingId happen in onDown (at press time), NOT at
+  // the DRAG_MIN threshold.  That way the re-render that makes the Animated.View
+  // follow dragAnimX/Y is done before the user has moved 4 px — eliminating the
+  // "frozen on first grab" stickiness.
+  //
+  // Tap rollback: if the user releases without crossing DRAG_MIN we restore the
+  // pre-press stacks and manually dispatch the tap handler (TouchableOpacity may
+  // not fire because the block was briefly in a different React tree key).
   useEffect(() => {
     if (typeof document === 'undefined') return;
 
+    const BRACKET_DEF_IDS = ['ctrl_2', 'ctrl_3', 'ctrl_4'];
+    const BRACKET_TOP_H   = 43; // bracketTop body height px
+
     const onDown = (e: PointerEvent) => {
-      // Clear any stale library drag state
       (window as any).__libDrag = null;
       setLibDragBlock(null);
 
       const hit = stackAt(e.clientX, e.clientY);
       if (!hit) return;
       const { stack, relY } = hit;
-      const blockIdx = blockIdxAt(stack.id, relY);
+      const blockIdx    = blockIdxAt(stack.id, relY);
+      const clickedBlock = stack.blocks[blockIdx];
 
-      pendingDrag.current = {
-        stackId:    stack.id,
-        blockIdx,
-        startMouse: { x: e.clientX, y: e.clientY },
-        startPos:   { x: stack.x,   y: stack.y + accumHeight(stack.id, blockIdx) },
+      // Save pre-drag state so we can roll back on tap
+      preDragStacks.current = localStacksRef.current;
+      tappedBlock.current   = {
+        block:       clickedBlock,
+        isEvent:     isTouchEvent(clickedBlock),
+        stackBlocks: stack.blocks,
+        bi:          blockIdx,
       };
       hasMovedRef.current = false;
+
+      // ── Inner bracket extraction ───────────────────────────────────────
+      if (BRACKET_DEF_IDS.includes(clickedBlock?.defId) && clickedBlock?.innerBlocks?.length) {
+        const canvas = toCanvas(e.clientX, e.clientY);
+        const bracketTop = stack.y + accumHeight(stack.id, blockIdx);
+        if (canvas.y >= bracketTop + BRACKET_TOP_H) {
+          const extractX = stack.x + 20;
+          const extractY = bracketTop + BRACKET_TOP_H;
+          const innerBlocks = clickedBlock.innerBlocks!;
+          const newId = `ex_${Date.now()}`;
+          const newStack: BlockStack = { id: newId, x: extractX, y: extractY, blocks: innerBlocks };
+          const next = localStacksRef.current
+            .map(s => s.id === stack.id
+              ? { ...s, blocks: s.blocks.map(b => b.id === clickedBlock.id ? { ...b, innerBlocks: [] } : b) }
+              : s)
+            .concat([newStack]);
+          localStacksRef.current = next;
+          setStacks(next);
+          dragAnimX.setValue(extractX);
+          dragAnimY.setValue(extractY);
+          draggingIdRef.current = newId;
+          setDraggingId(newId);
+          pendingDrag.current = {
+            stackId: newId, blockIdx: 0,
+            startMouse: { x: e.clientX, y: e.clientY },
+            startPos:   { x: extractX, y: extractY },
+          };
+          return;
+        }
+      }
+
+      // ── Regular drag — split mid-stack if needed ───────────────────────
+      let dragStackId = stack.id;
+      let startPos    = { x: stack.x, y: stack.y + accumHeight(stack.id, blockIdx) };
+
+      if (blockIdx > 0) {
+        const newId = `sp_${Date.now()}`;
+        dragStackId  = newId;
+        const splitY = stack.y + accumHeight(stack.id, blockIdx);
+        const newStack: BlockStack = {
+          id: newId, x: stack.x, y: splitY,
+          blocks: stack.blocks.slice(blockIdx),
+        };
+        const topStack = { ...stack, blocks: stack.blocks.slice(0, blockIdx) };
+        const next = localStacksRef.current
+          .map(s => s.id === stack.id ? topStack : s)
+          .concat([newStack]);
+        localStacksRef.current = next;
+        setStacks(next);
+        startPos = { x: newStack.x, y: newStack.y };
+      }
+
+      dragAnimX.setValue(startPos.x);
+      dragAnimY.setValue(startPos.y);
+      draggingIdRef.current = dragStackId;
+      setDraggingId(dragStackId);
+      pendingDrag.current = {
+        stackId: dragStackId, blockIdx: 0,
+        startMouse: { x: e.clientX, y: e.clientY },
+        startPos,
+      };
     };
 
     const onMove = (e: PointerEvent) => {
@@ -197,52 +288,17 @@ export default function Workspace() {
       }
 
       if (!pendingDrag.current) return;
-      const { stackId, blockIdx, startMouse, startPos } = pendingDrag.current;
+      const { startMouse, startPos, stackId: dsId } = pendingDrag.current;
       const dx = e.clientX - startMouse.x;
       const dy = e.clientY - startMouse.y;
 
-      if (!hasMovedRef.current && Math.abs(dx) + Math.abs(dy) > DRAG_MIN) {
+      if (!hasMovedRef.current) {
+        if (Math.abs(dx) + Math.abs(dy) <= DRAG_MIN) return;
         hasMovedRef.current = true;
-
-        // ── Split the stack if dragging from a non-first block ──────────
-        const stks = localStacksRef.current;
-        const origStack = stks.find(s => s.id === stackId);
-        if (!origStack) return;
-
-        let dragStackId = stackId;
-
-        if (blockIdx > 0) {
-          // Create sub-stack for blocks from blockIdx onwards
-          const newId = `split_${Date.now()}`;
-          dragStackId  = newId;
-          const newStack: BlockStack = {
-            id: newId,
-            x:  origStack.x,
-            y:  origStack.y + accumHeight(origStack.id, blockIdx),
-            blocks: origStack.blocks.slice(blockIdx),
-          };
-          const topStack = { ...origStack, blocks: origStack.blocks.slice(0, blockIdx) };
-          const next = stks
-            .map((s: BlockStack) => s.id === stackId ? topStack : s)
-            .concat([newStack]);
-          localStacksRef.current = next;
-          setStacks(next);
-          pendingDrag.current = { ...pendingDrag.current, stackId: newId, blockIdx: 0,
-            startPos: { x: newStack.x, y: newStack.y } };
-        }
-
-        draggingIdRef.current = dragStackId;
-        setDraggingId(dragStackId);
-
-        const ds = localStacksRef.current.find(s => s.id === dragStackId);
-        if (ds) { dragAnimX.setValue(ds.x); dragAnimY.setValue(ds.y); }
       }
 
-      if (!hasMovedRef.current) return;
-
-      const { startPos: sp, stackId: dsId } = pendingDrag.current;
-      const newX = sp.x + dx;
-      const newY = sp.y + dy;
+      const newX = startPos.x + dx;
+      const newY = startPos.y + dy;
       dragAnimX.setValue(newX);
       dragAnimY.setValue(newY);
 
@@ -262,48 +318,66 @@ export default function Workspace() {
       const ld = (window as any).__libDrag;
       if (ld?.active && ld?.hasMoved) {
         (window as any).__libDrag = null;
-        const pos  = toCanvas(e.clientX, e.clientY);
+        const pos       = toCanvas(e.clientX, e.clientY);
         const tempStack: BlockStack = { id: '__lib__', x: pos.x, y: pos.y, blocks: [ld.block] };
-        const snap        = findSnap(tempStack, pos.x, pos.y);
-        const bracketSnap = !snap ? findBracketSnap(tempStack, pos.x, pos.y) : null;
+        const bracketSnap = findBracketSnap(tempStack, pos.x, pos.y);
+        const snap        = !bracketSnap ? findSnap(tempStack, pos.x, pos.y) : null;
         const wsBlock: WorkspaceBlock = { ...ld.block, id: `ws_${Date.now()}_${ld.block.id}` };
         const stks = localStacksRef.current;
 
-        if (snap) {
-          const next = stks.map((s: BlockStack) => {
-            if (s.id !== snap.id) return s;
-            const merged = [...s.blocks];
-            merged.splice(snap.insertAt, 0, wsBlock);
-            return { ...s, blocks: merged };
-          });
-          localStacksRef.current = next;
-          setStacks(next);
-        } else if (bracketSnap) {
+        if (bracketSnap) {
           const next = stks.map((s: BlockStack) => s.id === bracketSnap.stackId
             ? { ...s, blocks: s.blocks.map(b => b.id === bracketSnap.bracketBlockId
                 ? { ...b, innerBlocks: [...(b.innerBlocks ?? []), wsBlock] } : b) }
             : s);
-          localStacksRef.current = next;
-          setStacks(next);
+          localStacksRef.current = next; setStacks(next);
+        } else if (snap) {
+          const next = stks.map((s: BlockStack) => {
+            if (s.id !== snap.id) return s;
+            const merged = [...s.blocks]; merged.splice(snap.insertAt, 0, wsBlock);
+            return { ...s, blocks: merged };
+          });
+          localStacksRef.current = next; setStacks(next);
         } else {
           addStackRef.current(wsBlock, Math.max(10, pos.x - 60), Math.max(10, pos.y - 30));
         }
-
-        setLibDragBlock(null);
-        setSnapTargetId(null);
-        setSnapPreviewPos(null);
+        setLibDragBlock(null); setSnapTargetId(null); setSnapPreviewPos(null);
         return;
       }
 
       const pd = pendingDrag.current;
-      pendingDrag.current = null;
+      pendingDrag.current  = null;
+      draggingIdRef.current = null;
+      setDraggingId(null);
+      setSnapTargetId(null);
+      setSnapPreviewPos(null);
 
-      if (!pd || !hasMovedRef.current) {
-        // Tap — handled by TouchableOpacity
+      if (!pd) return;
+
+      if (!hasMovedRef.current) {
+        // ── TAP: roll back split, dispatch tap handler manually ──────────
         hasMovedRef.current = false;
+        if (preDragStacks.current) {
+          localStacksRef.current = preDragStacks.current;
+          setStacks(preDragStacks.current);
+          preDragStacks.current = null;
+        }
+        // Manually fire the tap handler
+        const tb = tappedBlock.current;
+        tappedBlock.current = null;
+        if (tb) {
+          if (tb.isEvent) triggerScript(tb.stackBlocks.slice(tb.bi));
+          else tapBlock(tb.block);
+        }
+        // Suppress any TouchableOpacity onPress that fires after us
+        draggedRecently.current = true;
+        setTimeout(() => { draggedRecently.current = false; }, 200);
         return;
       }
 
+      hasMovedRef.current   = false;
+      preDragStacks.current = null;
+      tappedBlock.current   = null;
       draggedRecently.current = true;
       setTimeout(() => { draggedRecently.current = false; }, 150);
 
@@ -317,46 +391,32 @@ export default function Workspace() {
       const dragStk = stks.find(s => s.id === dsId);
 
       if (dragStk) {
-        const snap        = findSnap(dragStk, newX, newY);
-        const bracketSnap = !snap ? findBracketSnap(dragStk, newX, newY) : null;
+        const bracketSnap = findBracketSnap(dragStk, newX, newY);
+        const snap        = !bracketSnap ? findSnap(dragStk, newX, newY) : null;
         let next: BlockStack[];
 
-        if (snap) {
-          // Splice dragged blocks into target stack at the snapped boundary
+        if (bracketSnap) {
+          next = stks
+            .filter((s: BlockStack) => s.id !== dsId)
+            .map((s: BlockStack) => s.id === bracketSnap.stackId
+              ? { ...s, blocks: s.blocks.map(b => b.id === bracketSnap.bracketBlockId
+                  ? { ...b, innerBlocks: [...(b.innerBlocks ?? []), ...dragStk.blocks] }
+                  : b) }
+              : s);
+        } else if (snap) {
           next = stks
             .filter((s: BlockStack) => s.id !== dsId)
             .map((s: BlockStack) => {
               if (s.id !== snap.id) return s;
-              const merged = [...s.blocks];
-              merged.splice(snap.insertAt, 0, ...dragStk.blocks);
+              const merged = [...s.blocks]; merged.splice(snap.insertAt, 0, ...dragStk.blocks);
               return { ...s, blocks: merged };
             });
-        } else if (bracketSnap) {
-          // Drop into bracket's inner slot
-          next = stks
-            .filter((s: BlockStack) => s.id !== dsId)
-            .map((s: BlockStack) => s.id === bracketSnap.stackId
-              ? {
-                  ...s,
-                  blocks: s.blocks.map(b => b.id === bracketSnap.bracketBlockId
-                    ? { ...b, innerBlocks: [...(b.innerBlocks ?? []), ...dragStk.blocks] }
-                    : b
-                  ),
-                }
-              : s
-            );
         } else {
           next = stks.map((s: BlockStack) => s.id === dsId ? { ...s, x: newX, y: newY } : s);
         }
         localStacksRef.current = next;
         setStacks(next);
       }
-
-      draggingIdRef.current = null;
-      setDraggingId(null);
-      setSnapTargetId(null);
-      setSnapPreviewPos(null);
-      hasMovedRef.current = false;
     };
 
     document.addEventListener('pointerdown', onDown);
@@ -367,7 +427,8 @@ export default function Workspace() {
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup',   onUp);
     };
-  }, [stackAt, blockIdxAt, accumHeight, findSnap, findBracketSnap, setStacks, dragAnimX, dragAnimY]);
+  }, [stackAt, blockIdxAt, accumHeight, toCanvas, findSnap, findBracketSnap,
+      setStacks, dragAnimX, dragAnimY, tapBlock, triggerScript]);
 
   // ── Tap handlers ────────────────────────────────────────────────────────
   const handleEventTap = useCallback((block: WorkspaceBlock, stackBlocks: WorkspaceBlock[], bi: number) => {

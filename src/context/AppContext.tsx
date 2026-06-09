@@ -83,17 +83,18 @@ async function executeBlock(block: WorkspaceBlock): Promise<void> {
     await playSound(m?.[1]?.trim() ?? 'meow!').catch(() => {});
   } else if (defId === 'luz_4') {                         // ligue LED
     // Firmware: pins[] = {13,5,6,12}. Board "LED pin N" = pins[N-1], so subtract 1.
-    // Active-low wiring: value=1 → !1=LOW → on; value=0 → !0=HIGH → off.
+    // LEDs are wired active-high (anode→pin, cathode→GND).
+    // Firmware does digitalWrite(!value), so to drive pin HIGH (LED on) we send value=0.
     const ledType = (Math.round(liveNumber(block, 1)) || 1) - 1;
-    await board.sendCommand(ledType, 1).catch(() => {});
+    await board.sendCommand(ledType, 0).catch(() => {});  // value=0 → !0=HIGH → LED on
   } else if (defId === 'luz_5') {                         // desligue LED
     const ledType = (Math.round(liveNumber(block, 1)) || 1) - 1;
-    await board.sendCommand(ledType, 0).catch(() => {});
+    await board.sendCommand(ledType, 1).catch(() => {});  // value=1 → !1=LOW → LED off
   } else if (defId === 'luz_6') {                         // pisque LED
     const ledType = (Math.round(liveNumber(block, 1)) || 1) - 1;
-    await board.sendCommand(ledType, 1).catch(() => {});
+    await board.sendCommand(ledType, 0).catch(() => {});  // on
     await new Promise(r => setTimeout(r, 300));
-    await board.sendCommand(ledType, 0).catch(() => {});
+    await board.sendCommand(ledType, 1).catch(() => {});  // off
   } else if (defId === 'luz_7') {                         // ligue motor — pins[3]=12
     await board.sendCommand(3, 1).catch(() => {});
   } else if (defId === 'luz_8') {                         // desligue motor

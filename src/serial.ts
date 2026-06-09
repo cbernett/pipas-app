@@ -15,8 +15,9 @@
  * Baud rate: 9600
  */
 
-type TouchListener   = (pad: number) => void;
-type RawLineListener = (line: string) => void;
+type TouchListener      = (pad: number) => void;
+type RawLineListener    = (line: string) => void;
+type DisconnectListener = () => void;
 
 export const COMMON_BAUD_RATES = [9600, 57600, 115200, 19200, 38400];
 
@@ -25,15 +26,14 @@ const DEBOUNCE_MS = 350; // ignore same pad within this window
 class PipasBoardSerial {
   private port: any   = null;
   private reader: any = null;
-  private touchListeners:  TouchListener[]   = [];
-  private rawListeners:    RawLineListener[] = [];
+  private touchListeners:      TouchListener[]      = [];
+  private rawListeners:        RawLineListener[]    = [];
+  private disconnectListeners: DisconnectListener[] = [];
   private running  = false;
-  private baud     = 9600;
+  private baud     = 115200;
 
   // Debounce: track last emit time per pad
   private lastEmit: Record<number, number> = {};
-  // State tracking: only fire on change (avoids repeated triggers from same byte)
-  private prevRaw = -1;
 
   get isSupported() {
     return typeof navigator !== 'undefined' && 'serial' in navigator;
@@ -53,6 +53,11 @@ class PipasBoardSerial {
     return () => { this.rawListeners = this.rawListeners.filter(l => l !== fn); };
   }
 
+  onDisconnect(fn: DisconnectListener): () => void {
+    this.disconnectListeners.push(fn);
+    return () => { this.disconnectListeners = this.disconnectListeners.filter(l => l !== fn); };
+  }
+
   private emitTouch(pad: number) {
     const now = Date.now();
     if (now - (this.lastEmit[pad] ?? 0) < DEBOUNCE_MS) return;
@@ -69,7 +74,15 @@ class PipasBoardSerial {
       throw new Error('Web Serial não suportado. Use o Google Chrome.');
     }
     const nav = navigator as any;
+
+    // requestPort() MUST be the first async call after the user gesture —
+    // any prior await breaks Chrome's gesture-chain and silently blocks the picker.
     this.port = await nav.serial.requestPort();
+
+    // If the port is already open (e.g. left open from a previous session),
+    // close it cleanly before re-opening.
+    try { await this.port.close(); } catch (_) {}
+
     await this.port.open({
       baudRate:    this.baud,
       dataBits:    8,
@@ -85,7 +98,31 @@ class PipasBoardSerial {
       await this.port.setSignals({ dataTerminalReady: true,  requestToSend: true  });
     } catch (_) {}
 
+    // Auto-detect physical USB disconnect
+    const nav2 = navigator as any;
+    const handlePortDisconnect = (event: any) => {
+      if (event.target === this.port || (this.port && event.target?.getInfo && this.port?.getInfo &&
+          JSON.stringify(event.target.getInfo()) === JSON.stringify(this.port.getInfo()))) {
+        this.running = false;
+        this.port   = null;
+        this.reader = null;
+        this.emitRaw('[cabo desconectado]');
+        this.disconnectListeners.forEach(fn => fn());
+        nav2.serial.removeEventListener('disconnect', handlePortDisconnect);
+      }
+    };
+    nav2.serial.addEventListener('disconnect', handlePortDisconnect);
+
     this.running = true;
+
+    // After DTR reset the firmware sets all pins HIGH.
+    // LEDs wired active-high (anode→pin) turn ON immediately.
+    // Send value=1 (→ !1=LOW → LED off) for all LED pins to clear that.
+    await new Promise(r => setTimeout(r, 500)); // wait for board to finish resetting
+    for (let t = 0; t < 3; t++) {
+      await this.sendCommand(t, 1).catch(() => {}); // LOW → active-high LED off
+    }
+
     this.emitRaw(`[conectado a ${this.baud} baud — aguardando toque…]`);
     this.readLoop();
   }
@@ -131,9 +168,14 @@ class PipasBoardSerial {
           this.emitRaw(`[erro: ${err?.message ?? String(err)}]`);
         }
       } finally {
-        this.reader?.releaseLock();
+        // Wrap in try-catch — releaseLock() can itself throw if the reader was
+        // already released (e.g. after cancel()), which would escape the finally
+        // block and kill the outer while loop permanently.
+        try { this.reader?.releaseLock(); } catch (_) {}
         this.reader = null;
       }
+      // Brief pause before retrying so a persistent error doesn't spin at 100% CPU
+      if (this.running) await new Promise(r => setTimeout(r, 20));
     }
   }
 
@@ -141,13 +183,14 @@ class PipasBoardSerial {
     const n = parseInt(ch, 10);
     if (isNaN(n)) return;
 
-    // Only process state changes — ignore repeated identical bytes
-    if (n === this.prevRaw) return;
-    this.prevRaw = n;
+    // Don't deduplicate via prevRaw — the board may not send a "no touch" byte
+    // between presses, so prevRaw would block re-triggers of the same pad.
+    // The 350ms debounce in emitTouch is sufficient to prevent duplicate fires.
 
     // Firmware is 0-indexed: '0' = pad 1, '1' = pad 2, '2' = pad 3
     // Convert to 1-indexed for the app
     const pad = n + 1; // 1, 2, 3
+    if (pad < 1 || pad > 3) return; // ignore out-of-range bytes
     this.emitRaw(`toque ${pad}`);
     this.emitTouch(pad);
   }

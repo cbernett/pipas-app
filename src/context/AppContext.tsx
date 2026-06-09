@@ -82,20 +82,22 @@ async function executeBlock(block: WorkspaceBlock): Promise<void> {
     const m = label.match(/toque som\s+(.+)/);
     await playSound(m?.[1]?.trim() ?? 'meow!').catch(() => {});
   } else if (defId === 'luz_4') {                         // ligue LED
-    const n = parseInt(label.match(/\d+/)?.[0] ?? '1');
-    await board.sendCommand(1, n).catch(() => {});
+    // Firmware: pins[] = {13,5,6,12}. Board "LED pin N" = pins[N-1], so subtract 1.
+    // Active-low wiring: value=1 → !1=LOW → on; value=0 → !0=HIGH → off.
+    const ledType = (Math.round(liveNumber(block, 1)) || 1) - 1;
+    await board.sendCommand(ledType, 1).catch(() => {});
   } else if (defId === 'luz_5') {                         // desligue LED
-    const n = parseInt(label.match(/\d+/)?.[0] ?? '1');
-    await board.sendCommand(0, n).catch(() => {});
+    const ledType = (Math.round(liveNumber(block, 1)) || 1) - 1;
+    await board.sendCommand(ledType, 0).catch(() => {});
   } else if (defId === 'luz_6') {                         // pisque LED
-    const n = parseInt(label.match(/\d+/)?.[0] ?? '1');
-    await board.sendCommand(1, n).catch(() => {});
+    const ledType = (Math.round(liveNumber(block, 1)) || 1) - 1;
+    await board.sendCommand(ledType, 1).catch(() => {});
     await new Promise(r => setTimeout(r, 300));
-    await board.sendCommand(0, n).catch(() => {});
-  } else if (defId === 'luz_7') {                         // ligue motor
-    await board.sendCommand(2, 1).catch(() => {});
+    await board.sendCommand(ledType, 0).catch(() => {});
+  } else if (defId === 'luz_7') {                         // ligue motor — pins[3]=12
+    await board.sendCommand(3, 1).catch(() => {});
   } else if (defId === 'luz_8') {                         // desligue motor
-    await board.sendCommand(2, 0).catch(() => {});
+    await board.sendCommand(3, 0).catch(() => {});
   }
 }
 
@@ -186,10 +188,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    await runBlocks(blocks);
-
-    isExecutingRef.current = false;
-    if (!runAbortRef.current) setActiveBlockId(null);
+    try {
+      await runBlocks(blocks);
+    } catch (_) {
+      // swallow unexpected errors so the lock is always released
+    } finally {
+      isExecutingRef.current = false;
+      if (!runAbortRef.current) setActiveBlockId(null);
+    }
   }, []);
 
   useEffect(() => { execRef.current = executeScript; }, [executeScript]);
@@ -200,7 +206,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const script = findTouchStack(activStacks, pad) ?? null;
     if (!script) return;
     runAbortRef.current = false;
-    execRef.current(script);
+    // .catch ensures a rejected promise never leaves isExecutingRef stuck
+    execRef.current(script).catch(() => { isExecutingRef.current = false; });
   }, []);
 
   useEffect(() => board.onTouch(handleTouchPad), [handleTouchPad]);
@@ -212,7 +219,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const triggerScript = useCallback((blocks: WorkspaceBlock[]) => {
     if (isExecutingRef.current) return;
     runAbortRef.current = false;
-    execRef.current(blocks);
+    execRef.current(blocks).catch(() => { isExecutingRef.current = false; });
   }, []);
 
   const simulateTouch = useCallback((pad: number) => handleTouchPad(pad), [handleTouchPad]);

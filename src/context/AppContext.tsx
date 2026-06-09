@@ -93,9 +93,12 @@ async function executeBlock(
   const label = block.label.toLowerCase();
   const defId = block.defId;
 
-  if (label.includes('toque som') || defId === 'som_1') {
-    const m = label.match(/toque som\s+(.+)/);
-    const soundName = m?.[1]?.trim() ?? 'meow!';
+  if (label.includes('toque som') || defId === 'som_1' ||
+      label.includes('toque até parar') || defId === 'som_4') {
+    // liveParamValues holds the current dropdown selection; param index 1 is the sound name
+    const soundName = liveParamValues.get(`${block.id}_1`)
+      ?? label.match(/toque (?:som|até parar)\s+(.+)/)?.[1]?.trim()
+      ?? 'meow!';
     const userSound = getUserSounds().find(s => s.name === soundName);
     if (userSound && Platform.OS === 'web') {
       await new Promise<void>(resolve => {
@@ -259,10 +262,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const triggerScript = useCallback((blocks: WorkspaceBlock[]) => {
-    if (isExecutingRef.current) return;
+    if (isExecutingRef.current) {
+      // som_4 "toque até parar" → play to end, ignore re-triggers
+      const hasPlayUntilEnd = flattenBlocks(blocks).some(b => b.defId === 'som_4');
+      if (hasPlayUntilEnd) return;
+      // All other scripts → stop current execution and restart
+      stopRun();
+      setTimeout(() => {
+        runAbortRef.current = false;
+        execRef.current(blocks).catch(() => { isExecutingRef.current = false; });
+      }, 30);
+      return;
+    }
     runAbortRef.current = false;
     execRef.current(blocks).catch(() => { isExecutingRef.current = false; });
-  }, []);
+  }, [stopRun]);
 
   const simulateTouch = useCallback((pad: number) => handleTouchPad(pad), [handleTouchPad]);
 

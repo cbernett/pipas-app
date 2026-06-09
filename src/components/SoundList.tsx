@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { playSound, stopAllSounds } from '../audio';
+import { useApp, UserSound } from '../context/AppContext';
 
 export interface Sound {
   id: string;
@@ -14,10 +15,8 @@ export interface Sound {
 }
 
 interface Props {
-  extraSounds?: Sound[];
   onRecord: () => void;
   onSelectSound: (sound: Sound) => void;
-  onDeleteExtra?: (id: string) => void;
 }
 
 const LIBRARY_SOUNDS: Sound[] = [
@@ -30,11 +29,16 @@ const LIBRARY_SOUNDS: Sound[] = [
 
 type SubTab = 'biblioteca' | 'meus';
 
-export default function SoundList({ extraSounds = [], onRecord, onSelectSound, onDeleteExtra }: Props) {
+export default function SoundList({ onRecord, onSelectSound }: Props) {
   const [subTab, setSubTab]       = useState<SubTab>('biblioteca');
   const [playingId, setPlayingId] = useState<string | null>(null);
   const insets                    = useSafeAreaInsets();
   const audioBlobRef              = useRef<HTMLAudioElement | null>(null);
+  const { userSounds, deleteUserSound } = useApp();
+
+  const extraSounds: Sound[] = userSounds.map(s => ({
+    id: s.id, name: s.name, fileKey: s.name, duration: '', uri: s.uri,
+  }));
 
   const visibleSounds = subTab === 'biblioteca' ? LIBRARY_SOUNDS : extraSounds;
   const canDelete     = subTab === 'meus';
@@ -138,7 +142,7 @@ export default function SoundList({ extraSounds = [], onRecord, onSelectSound, o
             {canDelete && (
               <TouchableOpacity
                 style={styles.deleteBtn}
-                onPress={() => onDeleteExtra?.(sound.id)}
+                onPress={() => deleteUserSound(sound.id)}
                 hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
               >
                 <Text style={styles.deleteBtnText}>✕</Text>

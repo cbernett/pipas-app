@@ -3,31 +3,17 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SoundList from '../components/SoundList';
 import SoundRecorder from '../components/SoundRecorder';
-
-export interface Sound {
-  id: string;
-  name: string;
-  fileKey: string;
-  duration: string;
-  uri?: string;
-}
+import { useApp } from '../context/AppContext';
 
 type Tab = 'library' | 'record';
 
 export default function SonsScreen() {
-  const [tab, setTab]               = useState<Tab>('library');
-  const [extraSounds, setExtraSounds] = useState<Sound[]>([]);
-  const insets                        = useSafeAreaInsets();
+  const [tab, setTab] = useState<Tab>('library');
+  const insets        = useSafeAreaInsets();
+  const { addUserSound } = useApp();
 
   const handleSave = (name: string, uri?: string) => {
-    const newSound: Sound = {
-      id: `rec_${Date.now()}`,
-      name,
-      fileKey: name,
-      duration: '',
-      uri,
-    };
-    setExtraSounds(prev => [...prev, newSound]);
+    if (uri) addUserSound(name, uri);
     setTab('library');
   };
 
@@ -59,10 +45,8 @@ export default function SonsScreen() {
       <View style={styles.content}>
         {tab === 'library' ? (
           <SoundList
-            extraSounds={extraSounds}
             onRecord={() => setTab('record')}
             onSelectSound={() => {}}
-            onDeleteExtra={(id) => setExtraSounds(prev => prev.filter(s => s.id !== id))}
           />
         ) : (
           <SoundRecorder

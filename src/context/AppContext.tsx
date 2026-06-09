@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect, ReactNode } from 'react';
+import { Platform } from 'react-native';
 import { BlockDef, BlockStack, WorkspaceBlock, BLOCK_TEMPLATES } from '../data/blocks';
 import { liveParamValues } from '../components/CodeBlock';
 import { playSound } from '../audio';
@@ -7,12 +8,21 @@ import { board } from '../serial';
 export type BoardStatus = 'connected' | 'disconnected' | 'error';
 export type { WorkspaceBlock, BlockStack };
 
+export interface UserSound {
+  id: string;
+  name: string;
+  uri: string; // blob URL
+}
+
 interface AppContextType {
   boardStatus: BoardStatus;
   setBoardStatus: (s: BoardStatus) => void;
   activeBlockId: string | null;
   stopRun: () => void;
   simulateTouch: (pad: number) => void;
+  userSounds: UserSound[];
+  addUserSound: (name: string, uri: string) => void;
+  deleteUserSound: (id: string) => void;
   tapBlock: (block: WorkspaceBlock) => void;
   triggerScript: (blocks: WorkspaceBlock[]) => void;
   activeTab: 'codigo' | 'sons';
@@ -76,13 +86,27 @@ function flattenBlocks(blocks: WorkspaceBlock[]): WorkspaceBlock[] {
   return out;
 }
 
-async function executeBlock(block: WorkspaceBlock): Promise<void> {
+async function executeBlock(
+  block: WorkspaceBlock,
+  getUserSounds: () => UserSound[],
+): Promise<void> {
   const label = block.label.toLowerCase();
   const defId = block.defId;
 
   if (label.includes('toque som') || defId === 'som_1') {
     const m = label.match(/toque som\s+(.+)/);
-    await playSound(m?.[1]?.trim() ?? 'meow!').catch(() => {});
+    const soundName = m?.[1]?.trim() ?? 'meow!';
+    const userSound = getUserSounds().find(s => s.name === soundName);
+    if (userSound && Platform.OS === 'web') {
+      await new Promise<void>(resolve => {
+        const audio = new Audio(userSound.uri);
+        audio.onended = () => resolve();
+        audio.onerror = () => resolve();
+        audio.play().catch(() => resolve());
+      });
+    } else {
+      await playSound(soundName).catch(() => {});
+    }
   } else if (defId === 'luz_4') {                         // ligue LED
     // Firmware: pins[] = {13,5,6,12}. Board "LED pin N" = pins[N-1], so subtract 1.
     // LEDs are wired active-high (anode→pin, cathode→GND).
@@ -128,10 +152,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [draggingBlock, setDraggingBlock] = useState<BlockDef | null>(null);
   const [trashHover, setTrashHover]       = useState(false);
 
+  // ── User-recorded sounds ─────────────────────────────────────────────────
+  const [userSounds, setUserSounds] = useState<UserSound[]>([]);
+  const userSoundsRef = useRef<UserSound[]>([]);
+  useEffect(() => { userSoundsRef.current = userSounds; }, [userSounds]);
+
+  const addUserSound = useCallback((name: string, uri: string) => {
+    const s: UserSound = { id: `usr_${Date.now()}`, name, uri };
+    setUserSounds(prev => [...prev, s]);
+  }, []);
+
+  const deleteUserSound = useCallback((id: string) => {
+    setUserSounds(prev => prev.filter(s => s.id !== id));
+  }, []);
+
   const runAbortRef    = useRef(false);
   const isExecutingRef = useRef(false);
   const stacksRef      = useRef<BlockStack[]>(stacks);
-  const execRef        = useRef<(blocks: WorkspaceBlock[]) => void>(() => {});
+  const execRef        = useRef<(blocks: WorkspaceBlock[]) => Promise<void>>(() => Promise.resolve());
 
   useEffect(() => { stacksRef.current = stacks; }, [stacks]);
 
@@ -179,7 +217,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         // ── regular action block ────────────────────────────────────────
         setActiveBlockId(block.id);
-        await executeBlock(block);
+        await executeBlock(block, () => userSoundsRef.current);
         if (runAbortRef.current) break;
         await new Promise<void>((resolve) => {
           const dur  = blockDuration(block);
@@ -217,7 +255,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => board.onTouch(handleTouchPad), [handleTouchPad]);
 
   const tapBlock = useCallback((block: WorkspaceBlock) => {
-    executeBlock(block).catch(() => {});
+    executeBlock(block, () => userSoundsRef.current).catch(() => {});
   }, []);
 
   const triggerScript = useCallback((blocks: WorkspaceBlock[]) => {
@@ -253,6 +291,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       usbDisconnectedWhileRunning, setUsbDisconnectedWhileRunning,
       draggingBlock, setDraggingBlock,
       trashHover, setTrashHover,
+      userSounds, addUserSound, deleteUserSound,
     }}>
       {children}
     </AppContext.Provider>

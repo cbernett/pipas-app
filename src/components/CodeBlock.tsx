@@ -3,7 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   Platform, Modal,
 } from 'react-native';
-import { WorkspaceBlock } from '../context/AppContext';
+import { WorkspaceBlock, useApp } from '../context/AppContext';
 import { BLOCK_TEMPLATES, BlockParamDef } from '../data/blocks';
 
 export const TAB_W      = 36;
@@ -229,7 +229,13 @@ function DropdownBubble({ blockId, paramIdx, value, options }: { blockId: string
   const [open, setOpen] = useState(false);
   const [pos, setPos]   = useState({ x: 0, y: 0 });
   const ref = useRef<View>(null);
-  const opts = options ?? [value];
+  const { userSounds } = useApp();
+  // For sound dropdowns (options includes library sounds), also show user recordings
+  const isSoundDropdown = options?.includes('meow!') ?? false;
+  const opts = [
+    ...(options ?? [value]),
+    ...(isSoundDropdown ? userSounds.map(s => s.name) : []),
+  ];
 
   const handleSelect = (opt: string) => {
     setVal(opt);

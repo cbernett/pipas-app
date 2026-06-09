@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "pipas-app-rn",
+    "name": "App Pipas Labs",
     "slug": "pipas-app-rn",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -19,7 +19,8 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "title": "App Pipas Labs"
     }
   }
 }

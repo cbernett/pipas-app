@@ -669,7 +669,7 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute', bottom: 20, right: 20, zIndex: 20,
     width: 52, height: 52, borderRadius: 26,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: '#5BC4D1',
     alignItems: 'center', justifyContent: 'center',
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3, shadowRadius: 4,

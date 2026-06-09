@@ -53,6 +53,7 @@ export default function SonsScreen() {
       extraSounds={extraSounds}
       onRecord={() => setView('record')}
       onSelectSound={(sound) => { setSelectedSound(sound); setView('selected'); }}
+      onDeleteExtra={(id) => setExtraSounds(prev => prev.filter(s => s.id !== id))}
     />
   );
 }

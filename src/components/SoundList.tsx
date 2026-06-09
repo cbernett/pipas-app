@@ -1,43 +1,63 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert,
+  View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { playSound, stopAllSounds } from '../audio';
 
 interface Sound {
   id: string;
-  name: string;
+  name: string;       // display name
+  fileKey: string;    // key used by playSound()
   duration: string;
+  uri?: string;       // blob URL for recorded sounds
 }
 
 interface Props {
+  extraSounds?: Sound[];
   onRecord: () => void;
   onSelectSound: (sound: Sound) => void;
 }
 
 const DEFAULT_SOUNDS: Sound[] = [
-  { id: '1', name: 'meow!', duration: '0.8s' },
-  { id: '2', name: 'bah!', duration: '0.5s' },
-  { id: '3', name: 'cheer', duration: '2.1s' },
-  { id: '4', name: 'erro', duration: '0.4s' },
-  { id: '5', name: 'menu', duration: '1.0s' },
+  { id: '1', name: 'Miado',     fileKey: 'meow!', duration: '0.8s' },
+  { id: '2', name: 'Bah!',      fileKey: 'bah!',  duration: '0.5s' },
+  { id: '3', name: 'Aplausos',  fileKey: 'cheer', duration: '2.1s' },
+  { id: '4', name: 'Erro',      fileKey: 'erro',  duration: '0.4s' },
+  { id: '5', name: 'Menu',      fileKey: 'menu',  duration: '1.0s' },
 ];
 
-export default function SoundList({ onRecord, onSelectSound }: Props) {
-  const [sounds, setSounds] = useState<Sound[]>(DEFAULT_SOUNDS);
+export default function SoundList({ extraSounds = [], onRecord, onSelectSound }: Props) {
+  const [sounds, setSounds]       = useState<Sound[]>(DEFAULT_SOUNDS);
   const [playingId, setPlayingId] = useState<string | null>(null);
-  const insets = useSafeAreaInsets();
+  const insets                    = useSafeAreaInsets();
+  const audioBlobRef              = useRef<HTMLAudioElement | null>(null);
+
+  const allSounds = [...sounds, ...extraSounds];
 
   const handlePlay = async (sound: Sound) => {
     if (playingId === sound.id) {
-      await stopAllSounds();
+      // Stop
+      if (Platform.OS === 'web' && audioBlobRef.current) {
+        audioBlobRef.current.pause();
+        audioBlobRef.current = null;
+      } else {
+        await stopAllSounds();
+      }
       setPlayingId(null);
       return;
     }
     setPlayingId(sound.id);
-    await playSound(sound.name);
-    setPlayingId(null);
+    if (Platform.OS === 'web' && sound.uri) {
+      // Play recorded blob
+      const audio = new Audio(sound.uri);
+      audioBlobRef.current = audio;
+      audio.onended = () => { setPlayingId(null); audioBlobRef.current = null; };
+      audio.play().catch(() => setPlayingId(null));
+    } else {
+      await playSound(sound.fileKey);
+      setPlayingId(null);
+    }
   };
 
   const handleDelete = (id: string) => {
@@ -50,7 +70,7 @@ export default function SoundList({ onRecord, onSelectSound }: Props) {
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
       <ScrollView contentContainerStyle={styles.list}>
-        {sounds.map((sound) => (
+        {allSounds.map((sound) => (
           <TouchableOpacity
             key={sound.id}
             style={styles.soundRow}

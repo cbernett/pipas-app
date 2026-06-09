@@ -85,9 +85,11 @@ function LibraryBlockItem({ block, addStack }: { block: BlockDef; addStack: (b: 
     return () => el.removeEventListener('pointerdown', onDown);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const isBracket = ['ctrl_2', 'ctrl_3', 'ctrl_4'].includes(block.id);
+
   return (
     <View ref={ref} style={styles.blockItem}>
-      <CodeBlock block={wsBlock} preview isFirst isLast />
+      <CodeBlock block={wsBlock} preview showBracket={isBracket} isFirst isLast />
     </View>
   );
 }

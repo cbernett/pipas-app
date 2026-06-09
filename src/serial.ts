@@ -114,15 +114,6 @@ class PipasBoardSerial {
     nav2.serial.addEventListener('disconnect', handlePortDisconnect);
 
     this.running = true;
-
-    // After DTR reset the firmware sets all pins HIGH.
-    // LEDs wired active-high (anode→pin) turn ON immediately.
-    // Send value=1 (→ !1=LOW → LED off) for all LED pins to clear that.
-    await new Promise(r => setTimeout(r, 500)); // wait for board to finish resetting
-    for (let t = 0; t < 3; t++) {
-      await this.sendCommand(t, 1).catch(() => {}); // LOW → active-high LED off
-    }
-
     this.emitRaw(`[conectado a ${this.baud} baud — aguardando toque…]`);
     this.readLoop();
   }

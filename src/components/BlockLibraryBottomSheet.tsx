@@ -10,7 +10,7 @@ import { BLOCKS, BlockCategory } from '../data/blocks';
 
 const CATEGORIES: BlockCategory[] = ['Movimento', 'Luz', 'Som', 'Eventos', 'Controle'];
 
-const HANDLE_HEIGHT = 56;
+const HANDLE_HEIGHT = 64;
 const BAND_HEIGHT   = 56;
 // Drawer is always this height when open — never changes
 const OPEN_HEIGHT   = HANDLE_HEIGHT + CATEGORIES.length * BAND_HEIGHT; // 336
@@ -19,7 +19,7 @@ const OPEN_HEIGHT   = HANDLE_HEIGHT + CATEGORIES.length * BAND_HEIGHT; // 336
 const PEEK = 16;
 
 export default function BlockLibraryBottomSheet() {
-  const { libraryOpen, setLibraryOpen, expandedCategory, setExpandedCategory } = useApp();
+  const { libraryOpen, setLibraryOpen, expandedCategory, setExpandedCategory, trashHover } = useApp();
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
 
@@ -57,15 +57,21 @@ export default function BlockLibraryBottomSheet() {
   };
 
   return (
-    <Animated.View style={[styles.sheet, { height: sheetHeight }]}>
+    <Animated.View style={[styles.sheet, trashHover && styles.sheetTrash, { height: sheetHeight }]}>
       {/* Handle / header */}
       <TouchableOpacity
         style={styles.handleArea}
         onPress={() => setLibraryOpen(!libraryOpen)}
         activeOpacity={0.8}
       >
-        <View style={styles.handle} />
-        <Text style={styles.libraryLabel}>BIBLIOTECA DE BLOCOS</Text>
+        {trashHover ? (
+          <Text style={styles.trashIcon}>🗑️</Text>
+        ) : (
+          <>
+            <View style={styles.handle} />
+            <Text style={styles.libraryLabel}>BIBLIOTECA DE BLOCOS</Text>
+          </>
+        )}
       </TouchableOpacity>
 
       {/* Fixed-order category list; scrolls programmatically on selection */}
@@ -102,11 +108,13 @@ const styles = StyleSheet.create({
     borderRightWidth: 1,
     borderRightColor: 'rgba(255,255,255,0.08)',
   },
+  sheetTrash: {
+  },
   handleArea: {
     height: HANDLE_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
+    gap: 12,
     flexShrink: 0,
   },
   handle: {
@@ -114,9 +122,19 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
     backgroundColor: 'rgba(255,255,255,0.2)',
+    marginTop: -4,
   },
   libraryLabel: {
     color: 'rgba(255,255,255,0.6)',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 2,
+  },
+  trashIcon: {
+    fontSize: 26,
+  },
+  trashLabel: {
+    color: 'rgba(255,120,120,0.9)',
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 2,

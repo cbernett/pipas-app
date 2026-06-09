@@ -19,6 +19,7 @@ interface Props {
   isFirst?: boolean;
   isLast?: boolean;
   preview?: boolean;
+  showBracket?: boolean;  // force bracket rendering even in preview (used by library)
   isDragging?: boolean;
   isActive?: boolean;
   inBracket?: boolean;
@@ -30,7 +31,7 @@ interface Props {
 export default function CodeBlock(props: Props) {
   const { block } = props;
   const isEvent   = block.category === 'Eventos';
-  const isBracket = BRACKET_DEFIDS.includes(block.defId) && !props.preview;
+  const isBracket = BRACKET_DEFIDS.includes(block.defId) && (!props.preview || props.showBracket);
   const parts     = BLOCK_TEMPLATES[block.defId] ?? [block.label];
 
   if (isBracket) return <BracketBlock {...props} parts={parts} />;
@@ -221,12 +222,20 @@ function NumberBubble({ blockId, paramIdx, value }: { blockId: string; paramIdx:
   );
 }
 
-function DropdownBubble({ blockId: _blockId, paramIdx: _paramIdx, value, options }: { blockId: string; paramIdx: number; value: string; options?: string[] }) {
-  const [val, setVal]   = useState(value);
+function DropdownBubble({ blockId, paramIdx, value, options }: { blockId: string; paramIdx: number; value: string; options?: string[] }) {
+  // Persist selection in liveParamValues so remounts (during drag cycles) don't reset to default
+  const liveKey = `${blockId}_${paramIdx}`;
+  const [val, setVal]   = useState(() => liveParamValues.get(liveKey) ?? value);
   const [open, setOpen] = useState(false);
   const [pos, setPos]   = useState({ x: 0, y: 0 });
   const ref = useRef<View>(null);
   const opts = options ?? [value];
+
+  const handleSelect = (opt: string) => {
+    setVal(opt);
+    liveParamValues.set(liveKey, opt);
+    setOpen(false);
+  };
 
   const handleOpen = () => {
     ref.current?.measureInWindow((x, y, _w, h) => {
@@ -236,7 +245,8 @@ function DropdownBubble({ blockId: _blockId, paramIdx: _paramIdx, value, options
   };
 
   return (
-    <View ref={ref}>
+    // testID maps to data-testid on web — lets Workspace.onDown skip drag-init for dropdown taps
+    <View ref={ref} testID="dropdown-bubble">
       <TouchableOpacity style={styles.dropBubble} onPress={handleOpen} activeOpacity={0.8}>
         <Text style={styles.dropText}>{val}</Text>
         <Text style={styles.dropChevron}>▾</Text>
@@ -249,7 +259,7 @@ function DropdownBubble({ blockId: _blockId, paramIdx: _paramIdx, value, options
               <TouchableOpacity
                 key={opt}
                 style={[styles.dropOption, opt === val && styles.dropOptionActive]}
-                onPress={() => { setVal(opt); setOpen(false); }}
+                onPress={() => handleSelect(opt)}
                 activeOpacity={0.8}
               >
                 <Text style={[styles.dropOptionText, opt === val && styles.dropOptionTextActive]}>

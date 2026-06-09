@@ -1,29 +1,35 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Animated,
+  View, Text, TouchableOpacity, StyleSheet, Animated, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Props {
   onCancel: () => void;
-  onSave: (name: string) => void;
+  onSave: (name: string, uri?: string) => void;
 }
 
 export default function SoundRecorder({ onCancel, onSave }: Props) {
-  const [isRecording, setIsRecording] = useState(false);
-  const [seconds, setSeconds] = useState(0);
-  const [hasRecording, setHasRecording] = useState(false);
-  const pulse = useRef(new Animated.Value(1)).current;
+  const [isRecording, setIsRecording]     = useState(false);
+  const [seconds, setSeconds]             = useState(0);
+  const [hasRecording, setHasRecording]   = useState(false);
+  const [error, setError]                 = useState<string | null>(null);
+  const pulse      = useRef(new Animated.Value(1)).current;
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const insets = useSafeAreaInsets();
+  const insets     = useSafeAreaInsets();
+
+  // Web MediaRecorder refs
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef        = useRef<Blob[]>([]);
+  const audioBlobRef     = useRef<Blob | null>(null);
 
   useEffect(() => {
     if (isRecording) {
-      intervalRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
+      intervalRef.current = setInterval(() => setSeconds(s => s + 1), 1000);
       Animated.loop(
         Animated.sequence([
           Animated.timing(pulse, { toValue: 1.15, duration: 600, useNativeDriver: true }),
-          Animated.timing(pulse, { toValue: 1, duration: 600, useNativeDriver: true }),
+          Animated.timing(pulse, { toValue: 1,    duration: 600, useNativeDriver: true }),
         ])
       ).start();
     } else {
@@ -34,16 +40,58 @@ export default function SoundRecorder({ onCancel, onSave }: Props) {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [isRecording]);
 
-  const formatTime = (s: number) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
+  const formatTime = (s: number) =>
+    `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
 
-  const handleMicPress = () => {
+  const handleMicPress = async () => {
     if (isRecording) {
+      // Stop recording
+      if (Platform.OS === 'web' && mediaRecorderRef.current) {
+        mediaRecorderRef.current.stop();
+      }
       setIsRecording(false);
       setHasRecording(true);
     } else {
-      setIsRecording(true);
+      setError(null);
       setSeconds(0);
       setHasRecording(false);
+      audioBlobRef.current = null;
+
+      if (Platform.OS === 'web') {
+        try {
+          const stream = await (navigator as any).mediaDevices.getUserMedia({ audio: true });
+          chunksRef.current = [];
+          const mr = new (window as any).MediaRecorder(stream);
+          mediaRecorderRef.current = mr;
+
+          mr.ondataavailable = (e: any) => {
+            if (e.data.size > 0) chunksRef.current.push(e.data);
+          };
+          mr.onstop = () => {
+            const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+            audioBlobRef.current = blob;
+            // Stop all tracks to release microphone
+            stream.getTracks().forEach((t: any) => t.stop());
+          };
+          mr.start();
+          setIsRecording(true);
+        } catch (e: any) {
+          setError('Não foi possível acessar o microfone.');
+        }
+      } else {
+        setIsRecording(true);
+      }
+    }
+  };
+
+  const handleSave = () => {
+    if (!hasRecording) return;
+    const name = `Gravação ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+    if (Platform.OS === 'web' && audioBlobRef.current) {
+      const url = URL.createObjectURL(audioBlobRef.current);
+      onSave(name, url);
+    } else {
+      onSave(name);
     }
   };
 
@@ -51,7 +99,6 @@ export default function SoundRecorder({ onCancel, onSave }: Props) {
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
       <Text style={styles.title}>Gravar Som</Text>
 
-      {/* Timer */}
       <Text style={styles.timer}>{formatTime(seconds)}</Text>
 
       {/* Waveform (decorative) */}
@@ -65,8 +112,7 @@ export default function SoundRecorder({ onCancel, onSave }: Props) {
                 styles.wavebar,
                 {
                   height: h,
-                  backgroundColor: isRecording ? '#6B4FBB' : hasRecording ? '#9268F6' : '#DDD',
-                  opacity: isRecording ? 0.6 + Math.random() * 0.4 : 1,
+                  backgroundColor: isRecording ? '#9268F6' : hasRecording ? '#6B4FBB' : 'rgba(255,255,255,0.2)',
                 },
               ]}
             />
@@ -85,19 +131,21 @@ export default function SoundRecorder({ onCancel, onSave }: Props) {
         </TouchableOpacity>
       </Animated.View>
 
-      <Text style={styles.hint}>
-        {isRecording ? 'Toque para parar' : hasRecording ? 'Toque para regravar' : 'Toque para iniciar'}
-      </Text>
+      {error ? (
+        <Text style={styles.errorText}>{error}</Text>
+      ) : (
+        <Text style={styles.hint}>
+          {isRecording ? 'Toque para parar' : hasRecording ? 'Toque para regravar' : 'Toque para iniciar'}
+        </Text>
+      )}
 
-      {/* Actions */}
       <View style={styles.actions}>
         <TouchableOpacity style={styles.cancelBtn} onPress={onCancel} activeOpacity={0.8}>
           <Text style={styles.cancelText}>Cancelar</Text>
         </TouchableOpacity>
-
         <TouchableOpacity
           style={[styles.saveBtn, !hasRecording && styles.saveBtnDisabled]}
-          onPress={() => hasRecording && onSave(`som ${Date.now()}`)}
+          onPress={handleSave}
           activeOpacity={hasRecording ? 0.8 : 1}
         >
           <Text style={styles.saveText}>Salvar</Text>
@@ -118,14 +166,14 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#1A1A2E',
+    color: '#FFFFFF',
     marginBottom: 20,
   },
   timer: {
     fontSize: 48,
     fontWeight: '200',
-    color: '#1A1A2E',
-    fontVariant: ['tabular-nums'],
+    color: '#FFFFFF',
+    fontVariant: ['tabular-nums'] as any,
     marginBottom: 32,
   },
   waveformContainer: {
@@ -164,13 +212,20 @@ const styles = StyleSheet.create({
   hint: {
     marginTop: 16,
     fontSize: 14,
-    color: '#999',
+    color: 'rgba(255,255,255,0.5)',
     fontWeight: '500',
+  },
+  errorText: {
+    marginTop: 16,
+    fontSize: 14,
+    color: '#EF4444',
+    fontWeight: '500',
+    textAlign: 'center',
   },
   actions: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 'auto',
+    marginTop: 'auto' as any,
     width: '100%',
   },
   cancelBtn: {
@@ -178,12 +233,12 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: 'center',
-    backgroundColor: '#EFEFEF',
+    backgroundColor: 'rgba(255,255,255,0.1)',
   },
   cancelText: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#666',
+    color: 'rgba(255,255,255,0.7)',
   },
   saveBtn: {
     flex: 1,

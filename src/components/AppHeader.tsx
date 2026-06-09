@@ -40,8 +40,8 @@ export default function AppHeader() {
           </TouchableOpacity>
         </View>
 
-        {/* Right: connect button */}
-        <View style={styles.actions}>
+        {/* Right: connect button — box-none so it doesn't block centered tab clicks */}
+        <View style={styles.actions} pointerEvents="box-none">
           <BoardStatusButton />
         </View>
       </View>
@@ -58,16 +58,16 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingLeft: 16,
+    paddingLeft: 0,
     paddingRight: 12,
-    paddingTop: 12,
+    paddingTop: 20,
     paddingBottom: 0,
   },
 
   // Left — logo
   logoImage: {
-    width: 88,
-    height: 30,
+    width: 100,
+    height: 34,
     marginBottom: 13,
   },
 

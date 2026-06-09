@@ -9,6 +9,7 @@ const CANVAS_W   = 2200;
 const CANVAS_H   = 1800;
 const SNAP_D     = 30;   // snap detection radius in px
 const DRAG_MIN   = 4;    // min movement to activate drag (lower = more responsive)
+const TRASH_ZONE = 64;   // height of the biblioteca bar (closed) — drop here to delete
 
 function isTouchEvent(b: WorkspaceBlock) {
   return b.category === 'Eventos' ||
@@ -17,7 +18,7 @@ function isTouchEvent(b: WorkspaceBlock) {
 }
 
 export default function Workspace() {
-  const { stacks, setStacks, addStack, activeBlockId, usbDisconnectedWhileRunning, tapBlock, triggerScript } = useApp();
+  const { stacks, setStacks, addStack, activeBlockId, usbDisconnectedWhileRunning, tapBlock, triggerScript, trashHover, setTrashHover, stopRun } = useApp();
   const displayStacks = stacks;
 
   // ── Drag/snap state ─────────────────────────────────────────────────────
@@ -25,7 +26,7 @@ export default function Workspace() {
   const [snapTargetId,    setSnapTargetId]    = useState<string | null>(null);
   const [bracketHoverId,  setBracketHoverId]  = useState<string | null>(null);
   const bracketHoverRef   = useRef<string | null>(null);
-  const [snapPreviewPos, setSnapPreviewPos] = useState<{ x: number; y: number } | null>(null);
+  const [snapPreviewPos, setSnapPreviewPos] = useState<{ x: number; y: number; insertAt: number; targetId: string } | null>(null);
   // Library drag ghost block (for snap preview when dragging from library)
   const [libDragBlock, setLibDragBlock]   = useState<WorkspaceBlock | null>(null);
   const dragAnimX = useRef(new Animated.Value(0)).current;
@@ -92,20 +93,29 @@ export default function Workspace() {
 
   // ── Snap detection — checks every inter-block boundary, not just bottom ──
   const findSnap = useCallback((dragStack: BlockStack, dragX: number, dragY: number): { id: string; y: number; insertAt: number } | null => {
-    const emX = dragX + TAB_OFFSET + 8;
     const emY = dragY;
 
     for (const s of localStacksRef.current) {
       if (s.id === dragStack.id) continue;
-      const recX = s.x + TAB_OFFSET + 8;
-      if (Math.abs(emX - recX) >= SNAP_D) continue;
+      // Accept any x within 300px of the stack's left edge — wide so hovering
+      // anywhere over a stack triggers the snap, not just near the tab indent.
+      if (dragX < s.x - 40 || dragX > s.x + 300) continue;
 
-      // Check each boundary: between block i-1 and i, and at the very bottom
+      // For each boundary, find the closest one within the stack's y range
+      // and snap to whichever boundary the cursor is nearest to.
+      const totalH = stackHeightsRef.current[s.id] ?? 200;
+      if (emY < s.y - 20 || emY > s.y + totalH + 20) continue;
+
+      // Find the closest boundary
+      let bestDist = Infinity;
+      let bestI    = -1;
       for (let i = 1; i <= s.blocks.length; i++) {
         const boundY = s.y + accumHeight(s.id, i);
-        if (Math.abs(emY - boundY) < SNAP_D) {
-          return { id: s.id, y: boundY, insertAt: i };
-        }
+        const dist   = Math.abs(emY - boundY);
+        if (dist < bestDist) { bestDist = dist; bestI = i; }
+      }
+      if (bestI >= 0) {
+        return { id: s.id, y: s.y + accumHeight(s.id, bestI), insertAt: bestI };
       }
     }
     return null;
@@ -196,6 +206,11 @@ export default function Workspace() {
     const BRACKET_TOP_H   = 43; // bracketTop body height px
 
     const onDown = (e: PointerEvent) => {
+      // Don't intercept clicks on dropdowns or text inputs — let React handle them
+      const target = e.target as HTMLElement;
+      if (target.closest?.('[data-testid="dropdown-bubble"]') ||
+          target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+
       (window as any).__libDrag = null;
       setLibDragBlock(null);
 
@@ -299,7 +314,7 @@ export default function Workspace() {
         setLibDragBlock(ld.block);
         setSnapTargetId(snap?.id ?? null);
         setSnapPreviewPos(snap
-          ? { x: localStacksRef.current.find(s => s.id === snap.id)?.x ?? pos.x, y: snap.y }
+          ? { x: localStacksRef.current.find(s => s.id === snap.id)?.x ?? pos.x, y: snap.y, insertAt: snap.insertAt, targetId: snap.id }
           : null);
         return;
       }
@@ -319,6 +334,9 @@ export default function Workspace() {
       dragAnimX.setValue(newX);
       dragAnimY.setValue(newY);
 
+      // Trash zone: cursor is over the biblioteca bar at the bottom
+      setTrashHover(e.clientY > window.innerHeight - TRASH_ZONE);
+
       const dragStack = localStacksRef.current.find(s => s.id === dsId);
       if (dragStack) {
         const cursorCanvas = toCanvas(e.clientX, e.clientY);
@@ -333,6 +351,8 @@ export default function Workspace() {
         setSnapPreviewPos(snap ? {
           x: localStacksRef.current.find(s => s.id === snap.id)?.x ?? newX,
           y: snap.y,
+          insertAt: snap.insertAt,
+          targetId: snap.id,
         } : null);
       }
     };
@@ -378,8 +398,19 @@ export default function Workspace() {
       setSnapTargetId(null);
       setSnapPreviewPos(null);
       setBracketHoverId(null);
+      setTrashHover(false);
 
       if (!pd) return;
+
+      // ── Trash drop: delete the stack ──────────────────────────────────────
+      if (hasMovedRef.current && e.clientY > window.innerHeight - TRASH_ZONE) {
+        hasMovedRef.current = false;
+        preDragStacks.current = null;
+        const next = localStacksRef.current.filter((s: BlockStack) => s.id !== pd.stackId);
+        localStacksRef.current = next;
+        setStacks(next);
+        return;
+      }
 
       if (!hasMovedRef.current) {
         // ── TAP: roll back split, dispatch tap handler manually ──────────
@@ -474,24 +505,33 @@ export default function Workspace() {
 
   // ── Find dragged stack for snap preview ghost ────────────────────────────
   const draggingStack = draggingId ? displayStacks.find(s => s.id === draggingId) : null;
+  const isRunning = activeBlockId !== null;
 
   return (
     <View style={styles.root}>
-      {activeBlockId !== null && !usbDisconnectedWhileRunning && (
-        <View style={styles.runningBar} pointerEvents="none" />
-      )}
       {usbDisconnectedWhileRunning && (
         <View style={styles.usbBanner}>
           <Text style={styles.usbBannerText}>⚠️  Placa desconectada</Text>
         </View>
       )}
 
-      {/* Clear workspace button — resets to example */}
-      {stacks.length > 0 && (
-        <TouchableOpacity style={styles.clearBtn} onPress={() => setStacks([])}>
-          <Text style={styles.clearBtnText}>↺</Text>
-        </TouchableOpacity>
-      )}
+      {/* Play / Stop FAB */}
+      <TouchableOpacity
+        style={[styles.fab, isRunning && styles.fabStop, !isRunning && stacks.length === 0 && styles.fabInactive]}
+        onPress={() => {
+          if (isRunning) {
+            stopRun();
+          } else {
+            // Run all stacks simultaneously
+            stacks.forEach(stack => {
+              if (stack.blocks.length > 0) triggerScript(stack.blocks);
+            });
+          }
+        }}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.fabIcon}>{isRunning ? '■' : '▶'}</Text>
+      </TouchableOpacity>
 
       <ScrollView
         horizontal
@@ -528,18 +568,13 @@ export default function Workspace() {
               </View>
             )}
 
-            {/* Snap preview ghost — workspace drag or library drag */}
-            {snapPreviewPos && (draggingStack ?? libDragBlock) && (
-              <View style={[styles.snapGhost, { left: snapPreviewPos.x, top: snapPreviewPos.y }]}>
-                {(draggingStack ? draggingStack.blocks : [libDragBlock!]).map((b, bi, arr) => (
-                  <CodeBlock key={b.id} block={b} isFirst={bi === 0} isLast={bi === arr.length - 1} preview />
-                ))}
-              </View>
-            )}
 
             {displayStacks.map(stack => {
-              const isDragging = draggingId === stack.id;
-              const isSnap     = snapTargetId === stack.id;
+              const isDragging  = draggingId === stack.id;
+              const isSnap      = snapTargetId === stack.id;
+              const insertAt    = (isSnap && snapPreviewPos?.targetId === stack.id) ? snapPreviewPos.insertAt : null;
+              // Height of the spacer = height of what's being dragged (or library block)
+              const draggedH    = draggingStack ? (stackHeightsRef.current[draggingStack.id] ?? 44) : 44;
 
               return (
                 <Animated.View
@@ -550,32 +585,40 @@ export default function Workspace() {
                     isDragging
                       ? { left: dragAnimX, top: dragAnimY, zIndex: 200, opacity: 0.92 }
                       : { left: stack.x, top: stack.y, zIndex: isSnap ? 5 : 1 },
-                    isSnap && styles.snapTarget,
                   ]}
                 >
                   {stack.blocks.map((block, bi) => (
-                    <View
-                      key={block.id}
-                      style={{ marginTop: bi === 0 ? 0 : -TAB_H, zIndex: stack.blocks.length - bi + 1 }}
-                      onLayout={e => {
-                        if (!blockHeightsRef.current[stack.id]) blockHeightsRef.current[stack.id] = [];
-                        blockHeightsRef.current[stack.id][bi] = e.nativeEvent.layout.height;
-                      }}
-                    >
-                      <CodeBlock
-                        block={block}
-                        isFirst={bi === 0}
-                        isLast={bi === stack.blocks.length - 1}
-                        isDragging={isDragging}
-                        isActive={activeBlockId === block.id}
-                        isBracketHovered={bracketHoverId === block.id}
-                        onEventTap={isTouchEvent(block)
-                          ? () => handleEventTap(block, stack.blocks, bi)
-                          : undefined}
-                        onBlockTap={() => handleBlockTap(block)}
-                      />
-                    </View>
+                    <React.Fragment key={block.id}>
+                      {/* Insertion spacer above this block */}
+                      {insertAt === bi && (
+                        <View style={[styles.insertSpacer, { height: draggedH, marginTop: bi === 0 ? 0 : -TAB_H }]} pointerEvents="none" />
+                      )}
+                      <View
+                        style={{ marginTop: bi === 0 ? 0 : -TAB_H, zIndex: stack.blocks.length - bi + 1 }}
+                        onLayout={e => {
+                          if (!blockHeightsRef.current[stack.id]) blockHeightsRef.current[stack.id] = [];
+                          blockHeightsRef.current[stack.id][bi] = e.nativeEvent.layout.height;
+                        }}
+                      >
+                        <CodeBlock
+                          block={block}
+                          isFirst={bi === 0}
+                          isLast={bi === stack.blocks.length - 1}
+                          isDragging={isDragging}
+                          isActive={activeBlockId === block.id}
+                          isBracketHovered={bracketHoverId === block.id}
+                          onEventTap={isTouchEvent(block)
+                            ? () => handleEventTap(block, stack.blocks, bi)
+                            : undefined}
+                          onBlockTap={() => handleBlockTap(block)}
+                        />
+                      </View>
+                    </React.Fragment>
                   ))}
+                  {/* Spacer at end of stack */}
+                  {insertAt === stack.blocks.length && (
+                    <View style={[styles.insertSpacer, { height: draggedH, marginTop: -TAB_H }]} pointerEvents="none" />
+                  )}
                 </Animated.View>
               );
             })}
@@ -593,19 +636,14 @@ const styles = StyleSheet.create({
 
   stackPos: { position: 'absolute' },
 
-  // Snap outline highlight on target stack
-  snapTarget: {
-    shadowColor: '#FFF', shadowOpacity: 0.7, shadowRadius: 12,
+  // Insertion gap spacer shown inside the target stack
+  insertSpacer: {
     borderRadius: 12,
-  },
-
-  // Ghost preview at snap point
-  snapGhost: {
-    position: 'absolute', zIndex: 50,
-    opacity: 0.35,
-    borderWidth: 2, borderColor: 'rgba(255,255,255,0.6)',
-    borderRadius: 12,
-  },
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.5)',
+    borderStyle: 'dashed',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  } as any,
 
   runningBar: {
     position: 'absolute', top: 0, left: 0, right: 0,
@@ -626,11 +664,25 @@ const styles = StyleSheet.create({
     lineHeight: 21,
   },
 
-  clearBtn: {
-    position: 'absolute', bottom: 16, right: 16, zIndex: 20,
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+  // ── Play / Stop FAB ──────────────────────────────────────────────────────
+  // To restyle: change size, borderRadius, backgroundColor, fabStop.backgroundColor
+  fab: {
+    position: 'absolute', bottom: 20, right: 20, zIndex: 20,
+    width: 52, height: 52, borderRadius: 26,
+    backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3, shadowRadius: 4,
   },
-  clearBtnText: { color: 'rgba(255,255,255,0.5)', fontSize: 18 },
+  fabInactive: {
+    opacity: 0.25,
+  },
+  fabStop: {
+    // same background as play — icon change alone signals the state
+  },
+  fabIcon: {
+    color: '#FFF',
+    fontSize: 18,
+    lineHeight: 22,
+  },
 });

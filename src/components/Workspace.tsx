@@ -9,7 +9,8 @@ const CANVAS_W   = 2200;
 const CANVAS_H   = 1800;
 const SNAP_D     = 30;   // snap detection radius in px
 const DRAG_MIN   = 4;    // min movement to activate drag (lower = more responsive)
-const TRASH_ZONE = 64;   // height of the biblioteca bar (closed) — drop here to delete
+const TRASH_ZONE_CLOSED = 64;   // handle bar height when library is closed
+const TRASH_ZONE_OPEN   = 340;  // full drawer height when library is open
 
 function isTouchEvent(b: WorkspaceBlock) {
   return b.category === 'Eventos' ||
@@ -18,7 +19,9 @@ function isTouchEvent(b: WorkspaceBlock) {
 }
 
 export default function Workspace() {
-  const { stacks, setStacks, addStack, activeBlockId, usbDisconnectedWhileRunning, tapBlock, triggerScript, trashHover, setTrashHover, stopRun } = useApp();
+  const { stacks, setStacks, addStack, activeBlockId, usbDisconnectedWhileRunning, tapBlock, triggerScript, trashHover, setTrashHover, stopRun, libraryOpen } = useApp();
+  const libraryOpenRef = useRef(libraryOpen);
+  useEffect(() => { libraryOpenRef.current = libraryOpen; }, [libraryOpen]);
   const displayStacks = stacks;
 
   // ── Drag/snap state ─────────────────────────────────────────────────────
@@ -334,8 +337,9 @@ export default function Workspace() {
       dragAnimX.setValue(newX);
       dragAnimY.setValue(newY);
 
-      // Trash zone: cursor is over the biblioteca bar at the bottom
-      setTrashHover(e.clientY > window.innerHeight - TRASH_ZONE);
+      // Trash zone: covers library bar whether open or closed
+      const trashZone = libraryOpenRef.current ? TRASH_ZONE_OPEN : TRASH_ZONE_CLOSED;
+      setTrashHover(e.clientY > window.innerHeight - trashZone);
 
       const dragStack = localStacksRef.current.find(s => s.id === dsId);
       if (dragStack) {
@@ -403,7 +407,8 @@ export default function Workspace() {
       if (!pd) return;
 
       // ── Trash drop: delete the stack ──────────────────────────────────────
-      if (hasMovedRef.current && e.clientY > window.innerHeight - TRASH_ZONE) {
+      const trashZone = libraryOpenRef.current ? TRASH_ZONE_OPEN : TRASH_ZONE_CLOSED;
+      if (hasMovedRef.current && e.clientY > window.innerHeight - trashZone) {
         hasMovedRef.current = false;
         preDragStacks.current = null;
         const next = localStacksRef.current.filter((s: BlockStack) => s.id !== pd.stackId);

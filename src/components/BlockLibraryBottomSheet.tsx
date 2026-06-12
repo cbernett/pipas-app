@@ -35,7 +35,7 @@ export default function BlockLibraryBottomSheet() {
     }).start();
 
     if (!libraryOpen) {
-      setExpandedCategory(null);
+      // Don't reset expandedCategory — preserve it so reopening returns to same spot
       scrollRef.current?.scrollTo({ y: 0, animated: false });
     }
   }, [libraryOpen]);
@@ -57,27 +57,21 @@ export default function BlockLibraryBottomSheet() {
   };
 
   return (
-    <Animated.View style={[styles.sheet, trashHover && styles.sheetTrash, { height: sheetHeight }]}>
+    <Animated.View style={[styles.sheet, { height: sheetHeight }]}>
       {/* Handle / header */}
       <TouchableOpacity
         style={styles.handleArea}
         onPress={() => setLibraryOpen(!libraryOpen)}
         activeOpacity={0.8}
       >
-        {trashHover ? (
-          <Text style={styles.trashIcon}>🗑️</Text>
-        ) : (
-          <>
-            <View style={styles.handle} />
-            <Text style={styles.libraryLabel}>BIBLIOTECA DE BLOCOS</Text>
-          </>
-        )}
+        <View style={styles.handle} />
+        <Text style={styles.libraryLabel}>BIBLIOTECA DE BLOCOS</Text>
       </TouchableOpacity>
 
       {/* Fixed-order category list; scrolls programmatically on selection */}
       <ScrollView
         ref={scrollRef}
-        style={styles.scrollView}
+        style={[styles.scrollView, trashHover && styles.scrollDimmed]}
         showsVerticalScrollIndicator={false}
         scrollEnabled={true}
       >
@@ -92,6 +86,14 @@ export default function BlockLibraryBottomSheet() {
         ))}
         <View style={{ height: insets.bottom }} />
       </ScrollView>
+
+      {/* Trash overlay — shown over entire drawer when block is dragged over it */}
+      {trashHover && (
+        <View style={styles.trashOverlay} pointerEvents="none">
+          <Text style={styles.trashIcon}>🗑️</Text>
+          <Text style={styles.trashLabel}>SOLTAR PARA APAGAR</Text>
+        </View>
+      )}
     </Animated.View>
   );
 }
@@ -107,8 +109,6 @@ const styles = StyleSheet.create({
     borderLeftColor: 'rgba(255,255,255,0.08)',
     borderRightWidth: 1,
     borderRightColor: 'rgba(255,255,255,0.08)',
-  },
-  sheetTrash: {
   },
   handleArea: {
     height: HANDLE_HEIGHT,
@@ -130,16 +130,26 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 2,
   },
+  scrollView: {
+    flex: 1,
+  },
+  scrollDimmed: {
+    opacity: 0.25,
+  },
+  trashOverlay: {
+    position: 'absolute' as any,
+    top: 0, left: 0, right: 0, bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
   trashIcon: {
-    fontSize: 26,
+    fontSize: 36,
   },
   trashLabel: {
     color: 'rgba(255,120,120,0.9)',
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 2,
-  },
-  scrollView: {
-    flex: 1,
   },
 });

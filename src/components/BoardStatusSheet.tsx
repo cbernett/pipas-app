@@ -108,9 +108,7 @@ export default function BoardStatusSheet() {
             {/* Actions based on status */}
             {boardStatus === 'connected' && (
               <>
-                <ActionButton label="Testar LED"    color="#9268F6" onPress={() => board.sendCommand(1, 1)} />
-                <ActionButton label="Testar Motor"  color="#5F95F7" onPress={() => board.sendCommand(2, 1)} />
-                <ActionButton label="Desconectar"   color="#EF4444" outline onPress={handleDisconnect} />
+                <ActionButton label="Desconectar" color="#FFFFFF" outline onPress={handleDisconnect} />
               </>
             )}
             {boardStatus === 'disconnected' && (
@@ -129,7 +127,7 @@ export default function BoardStatusSheet() {
             {boardStatus === 'error' && (
               <>
                 <ActionButton label="Tentar novamente" color="#22C55E" onPress={handleConnect} />
-                <ActionButton label="Desconectar" color="#EF4444" outline onPress={handleDisconnect} />
+                <ActionButton label="Desconectar" color="#FFFFFF" outline onPress={handleDisconnect} />
               </>
             )}
 

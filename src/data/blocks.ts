@@ -29,9 +29,12 @@ export interface BlockParamDef {
 }
 export type BlockPartDef = string | BlockParamDef;
 
-const TOUCH_OPTS = ['toque 1', 'toque 2', 'toque 3'];
-const LED_OPTS   = ['1', '2', '3'];
-const SOUND_OPTS = ['meow!', 'bah!', 'cheer', 'erro', 'menu'];
+const TOUCH_OPTS  = ['toque 1', 'toque 2', 'toque 3'];
+const LED_OPTS    = ['1', '2'];
+const MOTOR_OPTS  = ['1', '2'];
+const SOUND_OPTS  = ['meow!', 'bah!', 'cheer', 'erro', 'menu'];
+const STATE_OPTS  = ['ligado', 'desligado'];
+const DEVICE_OPTS = ['LED 1', 'LED 2', 'motor 1', 'motor 2'];
 
 export const BLOCK_TEMPLATES: Record<string, BlockPartDef[]> = {
   mov_1: ['mova ', { type: 'number', value: '10' }, ' passos'],
@@ -42,8 +45,8 @@ export const BLOCK_TEMPLATES: Record<string, BlockPartDef[]> = {
   luz_4: ['ligue LED ',    { type: 'dropdown', value: '1', options: LED_OPTS }],
   luz_5: ['desligue LED ', { type: 'dropdown', value: '1', options: LED_OPTS }],
   luz_6: ['pisque LED ',   { type: 'dropdown', value: '1', options: LED_OPTS }],
-  luz_7: ['ligue motor'],
-  luz_8: ['desligue motor'],
+  luz_7: ['ligue motor ',    { type: 'dropdown', value: '1', options: MOTOR_OPTS }],
+  luz_8: ['desligue motor ', { type: 'dropdown', value: '1', options: MOTOR_OPTS }],
   som_1: ['toque som ',       { type: 'dropdown', value: 'meow!', options: SOUND_OPTS }],
   som_4: ['toque até parar ', { type: 'dropdown', value: 'meow!', options: SOUND_OPTS }],
   som_2: ['pare todos os sons'],
@@ -61,7 +64,7 @@ export const BLOCK_TEMPLATES: Record<string, BlockPartDef[]> = {
   ctrl_1b: ['espere ', { type: 'number', value: '0.2' }, ' segundo'],
   ctrl_2:  ['repita ', { type: 'number', value: '10' }, ' vezes'],
   ctrl_3:  ['sempre'],
-  ctrl_4:  ['se ', { type: 'dropdown', value: 'então', options: ['então', 'senão'] }],
+  ctrl_4:  ['se ', { type: 'dropdown', value: 'LED 1', options: DEVICE_OPTS }, ' está ', { type: 'dropdown', value: 'ligado', options: STATE_OPTS }, ' então'],
 };
 
 export interface WorkspaceBlock {
@@ -95,8 +98,8 @@ export const EXAMPLE_STACKS: BlockStack[] = [
 export const EXAMPLE_PROGRAM = EXAMPLE_STACKS[0].blocks;
 
 export const BLOCKS: BlockDef[] = [
-  { id: 'luz_7', label: 'ligue motor',              category: 'Movimento' },
-  { id: 'luz_8', label: 'desligue motor',           category: 'Movimento' },
+  { id: 'luz_7', label: 'ligue motor 1',    category: 'Movimento' },
+  { id: 'luz_8', label: 'desligue motor 1', category: 'Movimento' },
   { id: 'luz_4', label: 'ligue LED',                category: 'Luz' },
   { id: 'luz_5', label: 'desligue LED',             category: 'Luz' },
   { id: 'luz_6', label: 'pisque LED',               category: 'Luz' },
@@ -109,5 +112,5 @@ export const BLOCKS: BlockDef[] = [
   { id: 'ctrl_1', label: 'espere',   category: 'Controle' },
   { id: 'ctrl_2', label: 'repita',   category: 'Controle' },
   { id: 'ctrl_3', label: 'sempre',   category: 'Controle' },
-  { id: 'ctrl_4', label: 'se então', category: 'Controle' },
+  { id: 'ctrl_4', label: 'se … então', category: 'Controle' },
 ];

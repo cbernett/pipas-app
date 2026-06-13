@@ -124,10 +124,13 @@ async function executeBlock(
     await board.sendCommand(ledType, 1).catch(() => {});  // on
     await new Promise(r => setTimeout(r, 300));
     await board.sendCommand(ledType, 0).catch(() => {});  // off
-  } else if (defId === 'luz_7') {                         // ligue motor — pins[3]=12
-    await board.sendCommand(3, 1).catch(() => {});
-  } else if (defId === 'luz_8') {                         // desligue motor
-    await board.sendCommand(3, 0).catch(() => {});
+  } else if (defId === 'luz_7') {                         // ligue motor N
+    const motor = Math.round(liveNumber(block, 1)) || 1;
+    // motor 1 → pin index 3, motor 2 → pin index 4
+    await board.sendCommand(2 + motor, 1).catch(() => {});
+  } else if (defId === 'luz_8') {                         // desligue motor N
+    const motor = Math.round(liveNumber(block, 1)) || 1;
+    await board.sendCommand(2 + motor, 0).catch(() => {});
   }
 }
 
@@ -171,6 +174,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const runAbortRef    = useRef(false);
   const isExecutingRef = useRef(false);
+  // Track on/off state for LEDs and motors so 'se … então' can check them
+  const deviceStateRef = useRef<Record<string, boolean>>({});
   const stacksRef      = useRef<BlockStack[]>(stacks);
   const execRef        = useRef<(blocks: WorkspaceBlock[]) => Promise<void>>(() => Promise.resolve());
 
@@ -188,6 +193,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!blocks.length) return;
     isExecutingRef.current = true;
     runAbortRef.current = false;
+    deviceStateRef.current = {}; // reset device state at start of each run
 
     // Recursive runner — handles bracket blocks (repita / sempre / se)
     const runBlocks = async (bs: WorkspaceBlock[]): Promise<void> => {
@@ -212,15 +218,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
           continue;
         }
 
-        // ── se então / se senão — run inner once (condition TBD) ────────
+        // ── se [device] está [ligado/desligado] então ────────────────────
         if (block.defId === 'ctrl_4') {
-          await runBlocks(block.innerBlocks ?? []);
+          const device = liveParamValues.get(`${block.id}_1`) ?? 'LED 1';   // e.g. "LED 1"
+          const state  = liveParamValues.get(`${block.id}_2`) ?? 'ligado';  // "ligado" | "desligado"
+          const key    = device.toLowerCase().replace(' ', '_');             // "led_1", "motor_2"
+          const isOn   = deviceStateRef.current[key] ?? false;
+          const condMet = state === 'ligado' ? isOn : !isOn;
+          if (condMet) await runBlocks(block.innerBlocks ?? []);
           continue;
         }
 
         // ── regular action block ────────────────────────────────────────
         setActiveBlockId(block.id);
         await executeBlock(block, () => userSoundsRef.current);
+        // Track LED/motor state so 'se … então' can check it
+        if (block.defId === 'luz_4') {
+          const n = Math.round(liveNumber(block, 1)) || 1;
+          deviceStateRef.current[`led_${n}`] = true;
+        } else if (block.defId === 'luz_5' || block.defId === 'luz_6') {
+          const n = Math.round(liveNumber(block, 1)) || 1;
+          deviceStateRef.current[`led_${n}`] = false;
+        } else if (block.defId === 'luz_7') {
+          const n = Math.round(liveNumber(block, 1)) || 1;
+          deviceStateRef.current[`motor_${n}`] = true;
+        } else if (block.defId === 'luz_8') {
+          const n = Math.round(liveNumber(block, 1)) || 1;
+          deviceStateRef.current[`motor_${n}`] = false;
+        }
         if (runAbortRef.current) break;
         await new Promise<void>((resolve) => {
           const dur  = blockDuration(block);

@@ -93,7 +93,9 @@ export default function BlockLibraryBottomSheet() {
           {/* Frosted backdrop */}
           <View style={styles.trashBackdrop} />
           <Text style={styles.trashIcon}>🗑️</Text>
-          <Text style={styles.trashLabel}>SOLTAR PARA APAGAR</Text>
+          {libraryOpen && (
+            <Text style={styles.trashLabel}>SOLTAR PARA APAGAR</Text>
+          )}
         </View>
       )}
     </Animated.View>

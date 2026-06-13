@@ -1,5 +1,5 @@
 import React, { useRef, useState, useCallback, useEffect, useLayoutEffect } from 'react';
-import { View, ScrollView, Text, StyleSheet, Animated, TouchableOpacity } from 'react-native';
+import { View, ScrollView, Text, StyleSheet, Animated, TouchableOpacity, useWindowDimensions } from 'react-native';
 import { flushSync } from 'react-dom';
 import { useApp, WorkspaceBlock, BlockStack } from '../context/AppContext';
 import CodeBlock, { TAB_H, TAB_OFFSET } from './CodeBlock';
@@ -19,6 +19,7 @@ function isTouchEvent(b: WorkspaceBlock) {
 }
 
 export default function Workspace() {
+  const { width: winWidth } = useWindowDimensions();
   const { stacks, setStacks, addStack, activeBlockId, usbDisconnectedWhileRunning, tapBlock, triggerScript, trashHover, setTrashHover, stopRun, libraryOpen } = useApp();
   const libraryOpenRef = useRef(libraryOpen);
   useEffect(() => { libraryOpenRef.current = libraryOpen; }, [libraryOpen]);
@@ -566,7 +567,7 @@ export default function Workspace() {
 
             {/* Guide message — hidden once first block is placed */}
             {stacks.length === 0 && (
-              <View style={styles.guideMessage} pointerEvents="none">
+              <View style={[styles.guideMessage, { width: winWidth - 64 }]} pointerEvents="none">
                 <Text style={styles.guideText}>
                   Para iniciar conecta a placa e arrasta blocos da biblioteca para criar o seu programa.
                 </Text>
@@ -659,8 +660,7 @@ const styles = StyleSheet.create({
   guideMessage: {
     position: 'absolute',
     top: 24,
-    left: 20,
-    width: 280,
+    left: 32,
   },
   guideText: {
     color: 'rgba(255,255,255,0.45)',

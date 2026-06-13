@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  Platform, Modal,
+  Platform, Modal, Animated,
 } from 'react-native';
 import { WorkspaceBlock, useApp } from '../context/AppContext';
 import { BLOCK_TEMPLATES, BlockParamDef } from '../data/blocks';
@@ -42,9 +42,13 @@ export default function CodeBlock(props: Props) {
 // ─── Event block — seamless pill with circular left end ──────────────────────
 
 function EventBlock({ block, preview, isDragging, isActive, onEventTap, onBlockTap, parts }: Props & { parts: any[] }) {
+  // A "start" event has no param parts — just text. Make it span full width.
+  const isFullWidth = parts.every(p => typeof p === 'string');
+
   const body = (
     <View style={[
       styles.eventBody, { backgroundColor: block.color },
+      isFullWidth && styles.eventBodyFull,
       isDragging && styles.bodyDragging,
       isActive   && styles.bodyActive,
     ]}>
@@ -53,9 +57,13 @@ function EventBlock({ block, preview, isDragging, isActive, onEventTap, onBlockT
   );
 
   return (
-    <View style={styles.wrapper}>
+    <View style={[styles.wrapper, isFullWidth && styles.wrapperFull]}>
       {(onEventTap || onBlockTap) && !preview ? (
-        <TouchableOpacity onPress={onEventTap ?? onBlockTap} activeOpacity={0.82}>
+        <TouchableOpacity
+          onPress={onEventTap ?? onBlockTap}
+          activeOpacity={0.82}
+          style={isFullWidth ? { width: '100%' } : undefined}
+        >
           {body}
         </TouchableOpacity>
       ) : body}
@@ -121,6 +129,30 @@ function BracketBlock({ block, preview, isActive, isBracketHovered, parts }: Pro
   const inner    = block.innerBlocks ?? [];
   const hasInner = inner.length > 0;
 
+  // Pulse animation when a block is dragged over this bracket's inner zone
+  const hoverAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (isBracketHovered) {
+      const pulse = Animated.loop(Animated.sequence([
+        Animated.timing(hoverAnim, { toValue: 1, duration: 400, useNativeDriver: false }),
+        Animated.timing(hoverAnim, { toValue: 0, duration: 400, useNativeDriver: false }),
+      ]));
+      pulse.start();
+      return () => { pulse.stop(); hoverAnim.setValue(0); };
+    } else {
+      hoverAnim.setValue(0);
+    }
+  }, [isBracketHovered]);
+
+  const hoverBg = hoverAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['rgba(91,196,209,0.08)', 'rgba(91,196,209,0.22)'],
+  });
+  const hoverBorderColor = hoverAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['rgba(91,196,209,0.4)', 'rgba(91,196,209,0.9)'],
+  });
+
   // The bracketTop's tab must land at x = BRACKET_ARM_W + TAB_OFFSET from
   // the bracket's left, which equals where the first inner block's indent is.
   const innerTabLeft = BRACKET_ARM_W + TAB_OFFSET; // 40px
@@ -145,7 +177,17 @@ function BracketBlock({ block, preview, isActive, isBracketHovered, parts }: Pro
           the first inner block's indent. zIndex:1 so its children stack correctly. */}
       <View style={[styles.bracketBody, { marginTop: preview ? 0 : -TAB_H, zIndex: 1 }]}>
         <View style={[styles.bracketArm, { backgroundColor: block.color }]} />
-        <View style={[styles.bracketInner, isBracketHovered && styles.bracketInnerHovered]}>
+        <Animated.View style={[
+          styles.bracketInner,
+          isBracketHovered && {
+            backgroundColor: hoverBg,
+            borderWidth: 2,
+            borderLeftWidth: 0,
+            borderColor: hoverBorderColor,
+            borderTopRightRadius: 6,
+            borderBottomRightRadius: 6,
+          },
+        ]}>
           {hasInner
             ? inner.map((ib, i) => (
                 <View
@@ -159,11 +201,15 @@ function BracketBlock({ block, preview, isActive, isBracketHovered, parts }: Pro
                 </View>
               ))
             : (
-                // Empty slot — spacer only, no dashed border
-                <View style={[styles.bracketSlotEmpty, isBracketHovered && styles.bracketSlotHovered]} />
+                <Animated.View style={[
+                  styles.bracketSlotEmpty,
+                  isBracketHovered && {
+                    backgroundColor: hoverBg,
+                  },
+                ]} />
               )
           }
-        </View>
+        </Animated.View>
       </View>
 
       {/* Bottom bar — its indent receives the last inner block's outgoing tab.
@@ -286,7 +332,8 @@ const styles = StyleSheet.create({
   // touch-action: none tells the browser not to claim this element's pointer
   // events for native scroll/pan — required for custom pointer-event drag to
   // work on the first grab without the browser intercepting the gesture.
-  wrapper: { alignSelf: 'flex-start', touchAction: 'none' } as any,
+  wrapper:     { alignSelf: 'flex-start', touchAction: 'none' } as any,
+  wrapperFull: { alignSelf: 'stretch',   touchAction: 'none' } as any,
 
   // ── Indent: workspace-bg colour so the tab from above "fills" the void
   indent: {
@@ -340,6 +387,11 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.15, shadowRadius: 3, elevation: 2,
   },
+  // Full-width variant: stretches edge-to-edge with 32px side padding
+  eventBodyFull: {
+    paddingHorizontal: 32,
+    justifyContent: 'center',
+  },
 
   // ── Bracket
   bracketTop: {
@@ -352,11 +404,7 @@ const styles = StyleSheet.create({
   bracketArm:   { width: BRACKET_ARM_W },
   bracketInner: { flex: 1 },
   bracketInnerHovered: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderTopLeftRadius: 0,
-    borderBottomLeftRadius: 0,
-    borderTopRightRadius: 6,
-    borderBottomRightRadius: 6,
+    // hover styles now applied via Animated.View inline (pulsing teal)
   },
 
   // Concave inner corners: WS_BG quarter-circles positioned at the two
@@ -391,11 +439,7 @@ const styles = StyleSheet.create({
     height: TAB_H + 6 + 20 + 8,   // same height as one block body
   },
   bracketSlotHovered: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderTopLeftRadius: 0,
-    borderBottomLeftRadius: 0,
-    borderTopRightRadius: 6,
-    borderBottomRightRadius: 6,
+    // hover styles now applied via Animated.View inline (pulsing teal)
   },
 
   bracketBottom: {

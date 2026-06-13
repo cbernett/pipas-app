@@ -8,12 +8,19 @@ import { useApp } from '../context/AppContext';
 type Tab = 'library' | 'record';
 
 export default function SonsScreen() {
-  const [tab, setTab] = useState<Tab>('library');
-  const insets        = useSafeAreaInsets();
-  const { addUserSound } = useApp();
+  const [tab, setTab]               = useState<Tab>('library');
+  const [openMeus, setOpenMeus]     = useState(false);
+  const insets                      = useSafeAreaInsets();
+  const { addUserSound }            = useApp();
 
   const handleSave = (name: string, uri?: string) => {
     if (uri) addUserSound(name, uri);
+    setOpenMeus(true);   // signal SoundList to land on "Meus sons"
+    setTab('library');
+  };
+
+  const handleGoToLibrary = () => {
+    setOpenMeus(false);
     setTab('library');
   };
 
@@ -23,7 +30,7 @@ export default function SonsScreen() {
       <View style={[styles.tabBar, { paddingTop: Math.max(insets.top, 12) }]}>
         <TouchableOpacity
           style={[styles.tab, tab === 'library' && styles.tabActive]}
-          onPress={() => setTab('library')}
+          onPress={handleGoToLibrary}
           activeOpacity={0.8}
         >
           <Text style={[styles.tabText, tab === 'library' && styles.tabTextActive]}>
@@ -45,6 +52,8 @@ export default function SonsScreen() {
       <View style={styles.content}>
         {tab === 'library' ? (
           <SoundList
+            key={openMeus ? 'meus' : 'biblioteca'}
+            initialSubTab={openMeus ? 'meus' : 'biblioteca'}
             onRecord={() => setTab('record')}
             onSelectSound={() => {}}
           />

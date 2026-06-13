@@ -87,9 +87,11 @@ export default function BlockLibraryBottomSheet() {
         <View style={{ height: insets.bottom }} />
       </ScrollView>
 
-      {/* Trash overlay — shown over entire drawer when block is dragged over it */}
+      {/* Trash overlay — covers entire drawer (handle + scroll) when dragging a block */}
       {trashHover && (
         <View style={styles.trashOverlay} pointerEvents="none">
+          {/* Frosted backdrop */}
+          <View style={styles.trashBackdrop} />
           <Text style={styles.trashIcon}>🗑️</Text>
           <Text style={styles.trashLabel}>SOLTAR PARA APAGAR</Text>
         </View>
@@ -134,22 +136,30 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollDimmed: {
-    opacity: 0.25,
+    // dimming is now handled by the overlay backdrop
   },
   trashOverlay: {
     position: 'absolute' as any,
     top: 0, left: 0, right: 0, bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 10,
+    zIndex: 10,
+  },
+  trashBackdrop: {
+    position: 'absolute' as any,
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(15, 12, 28, 0.82)',
   },
   trashIcon: {
-    fontSize: 36,
+    fontSize: 40,
+    zIndex: 1,
   },
   trashLabel: {
-    color: 'rgba(255,120,120,0.9)',
+    color: 'rgba(255, 100, 100, 0.95)',
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 2,
+    zIndex: 1,
   },
 });

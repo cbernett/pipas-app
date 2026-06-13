@@ -11,39 +11,54 @@ export default function AppHeader() {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.row}>
-        {/* Left: logo */}
-        <Image
-          source={require('../../assets/pipas_loog_app_header.png')}
-          style={styles.logoImage}
-          resizeMode="contain"
-        />
 
-        {/* Center: tabs (absolutely centred) */}
-        <View style={styles.tabsCenter} pointerEvents="box-none">
+        {/* Left: icon tabs with pipe separator */}
+        <View style={styles.tabs}>
           <TouchableOpacity
-            style={[styles.tab, activeTab === 'codigo' && styles.tabActive]}
+            style={styles.tab}
             onPress={() => setActiveTab('codigo')}
             activeOpacity={0.7}
           >
-            <Text style={[styles.tabText, activeTab === 'codigo' && styles.tabTextActive]}>
-              Código
-            </Text>
+            <Image
+              source={activeTab === 'codigo'
+                ? require('../../assets/button-code-selected.png')
+                : require('../../assets/button-code-unselected.png')}
+              style={styles.tabIcon}
+              resizeMode="contain"
+            />
           </TouchableOpacity>
+
+          <View style={styles.pipe} />
+
           <TouchableOpacity
-            style={[styles.tab, activeTab === 'sons' && styles.tabActive]}
+            style={styles.tab}
             onPress={() => setActiveTab('sons')}
             activeOpacity={0.7}
           >
-            <Text style={[styles.tabText, activeTab === 'sons' && styles.tabTextActive]}>
-              Sons
-            </Text>
+            <Image
+              source={activeTab === 'sons'
+                ? require('../../assets/button-sound-selected.png')
+                : require('../../assets/button-sound-unselected.png')}
+              style={styles.tabIcon}
+              resizeMode="contain"
+            />
           </TouchableOpacity>
         </View>
 
-        {/* Right: connect button — box-none so it doesn't block centered tab clicks */}
+        {/* Center: icon — flex:1 + alignItems center keeps it truly centred */}
+        <View style={styles.centerLogo} pointerEvents="none">
+          <Image
+            source={require('../../assets/pipas_icon.png')}
+            style={styles.icon}
+            resizeMode="contain"
+          />
+        </View>
+
+        {/* Right: connect button */}
         <View style={styles.actions} pointerEvents="box-none">
           <BoardStatusButton />
         </View>
+
       </View>
     </View>
   );
@@ -58,56 +73,48 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingLeft: 0,
-    paddingRight: 12,
+    paddingLeft: 16,
+    paddingRight: 16,
     paddingTop: 20,
     paddingBottom: 0,
   },
 
-  // Left — logo
-  logoImage: {
-    width: 100,
-    height: 34,
-    marginBottom: 13,
-  },
-
-  // Center — tabs absolutely centred
-  tabsCenter: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
+  // Left — icon tabs
+  tabs: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'flex-end',
-  } as any,
+    alignItems: 'center',
+  },
   tab: {
-    paddingHorizontal: 14,
-    paddingTop: 4,
-    paddingBottom: 16,
-    marginRight: 2,
-    borderBottomWidth: 3,
-    borderBottomColor: 'transparent',
+    paddingHorizontal: 10,
+    paddingVertical: 14,
   },
-  tabActive: {
-    borderBottomColor: '#FFF',
+  tabIcon: {
+    width: 24,
+    height: 24,
   },
-  tabText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: 'rgba(255,255,255,0.4)',
-  },
-  tabTextActive: {
-    color: '#FFF',
+  pipe: {
+    width: 1.5,
+    height: 18,
+    backgroundColor: 'rgba(255,255,255,0.5)',
   },
 
-  // Right — bottom-aligned actions
-  actions: {
+  // Center — grows to fill space, centres icon
+  centerLogo: {
     flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingBottom: 10,
+  },
+  icon: {
+    width: 40,
+    height: 40,
+  },
+
+  // Right — connect button
+  actions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     alignItems: 'flex-end',
-    gap: 6,
-    paddingBottom: 16,
+    paddingBottom: 13,
   },
 });

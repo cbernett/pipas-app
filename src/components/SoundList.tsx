@@ -14,9 +14,12 @@ export interface Sound {
   uri?: string;
 }
 
+type SubTab = 'biblioteca' | 'meus';
+
 interface Props {
   onRecord: () => void;
   onSelectSound: (sound: Sound) => void;
+  initialSubTab?: SubTab;
 }
 
 const LIBRARY_SOUNDS: Sound[] = [
@@ -27,10 +30,8 @@ const LIBRARY_SOUNDS: Sound[] = [
   { id: '5', name: 'Menu',     fileKey: 'menu',  duration: '1.0s' },
 ];
 
-type SubTab = 'biblioteca' | 'meus';
-
-export default function SoundList({ onRecord, onSelectSound }: Props) {
-  const [subTab, setSubTab]       = useState<SubTab>('biblioteca');
+export default function SoundList({ onRecord, onSelectSound, initialSubTab = 'biblioteca' }: Props) {
+  const [subTab, setSubTab]       = useState<SubTab>(initialSubTab);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const insets                    = useSafeAreaInsets();
   const audioBlobRef              = useRef<HTMLAudioElement | null>(null);

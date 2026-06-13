@@ -246,14 +246,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => { execRef.current = executeScript; }, [executeScript]);
 
   const handleTouchPad = useCallback((pad: number) => {
-    if (isExecutingRef.current) return;
     const activStacks = stacksRef.current;
     const script = findTouchStack(activStacks, pad) ?? null;
     if (!script) return;
+
+    if (isExecutingRef.current) {
+      // "toque até parar" → play to end, ignore re-triggers
+      const hasPlayUntilEnd = flattenBlocks(script).some(b => b.defId === 'som_4');
+      if (hasPlayUntilEnd) return;
+      // All other scripts → stop and restart
+      stopRun();
+      setTimeout(() => {
+        runAbortRef.current = false;
+        execRef.current(script).catch(() => { isExecutingRef.current = false; });
+      }, 30);
+      return;
+    }
+
     runAbortRef.current = false;
-    // .catch ensures a rejected promise never leaves isExecutingRef stuck
     execRef.current(script).catch(() => { isExecutingRef.current = false; });
-  }, []);
+  }, [stopRun]);
 
   useEffect(() => board.onTouch(handleTouchPad), [handleTouchPad]);
 

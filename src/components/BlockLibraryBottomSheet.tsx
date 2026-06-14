@@ -1,7 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Animated,
-  ScrollView,
+  ScrollView, Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../context/AppContext';
@@ -92,9 +92,13 @@ export default function BlockLibraryBottomSheet() {
         <View style={styles.trashOverlay} pointerEvents="none">
           {/* Frosted backdrop */}
           <View style={styles.trashBackdrop} />
-          <Text style={styles.trashIcon}>🗑️</Text>
+          <Image
+            source={require('../../assets/icon-trash.png')}
+            style={styles.trashIcon}
+            resizeMode="contain"
+          />
           {libraryOpen && (
-            <Text style={styles.trashLabel}>SOLTAR PARA APAGAR</Text>
+            <Text style={styles.trashLabel}>Soltar para apagar</Text>
           )}
         </View>
       )}
@@ -154,14 +158,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15, 12, 28, 0.82)',
   },
   trashIcon: {
-    fontSize: 40,
+    width: 30,
+    height: 30,
     zIndex: 1,
   },
   trashLabel: {
-    color: 'rgba(255, 100, 100, 0.95)',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 2,
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '400',
     zIndex: 1,
   },
 });

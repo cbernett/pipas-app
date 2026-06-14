@@ -24,6 +24,8 @@ interface Props {
   isActive?: boolean;
   inBracket?: boolean;
   isBracketHovered?: boolean;
+  bracketInsertAt?: number;   // index within innerBlocks to show drop spacer
+  draggedH?: number;          // height of the dragged block (for spacer sizing)
   onEventTap?: () => void;
   onBlockTap?: () => void;
 }
@@ -125,7 +127,7 @@ function Tab({ color }: { color: string }) {
 // Their indents are at ARM_W + TAB_OFFSET from the bracket's left edge.
 const BRACKET_ARM_W = 20;
 
-function BracketBlock({ block, preview, isActive, isBracketHovered, parts }: Props & { parts: any[] }) {
+function BracketBlock({ block, preview, isActive, isBracketHovered, bracketInsertAt, draggedH = 44, parts }: Props & { parts: any[] }) {
   const inner    = block.innerBlocks ?? [];
   const hasInner = inner.length > 0;
 
@@ -189,17 +191,25 @@ function BracketBlock({ block, preview, isActive, isBracketHovered, parts }: Pro
           },
         ]}>
           {hasInner
-            ? inner.map((ib, i) => (
-                <View
-                  key={ib.id}
-                  style={{
-                    marginTop: i === 0 ? 0 : -TAB_H,
-                    zIndex: inner.length - i + 1,
-                  }}
-                >
-                  <CodeBlock block={ib} isFirst={i === 0} isLast={i === inner.length - 1} inBracket />
-                </View>
-              ))
+            ? (
+                <>
+                  {inner.map((ib, i) => (
+                    <React.Fragment key={ib.id}>
+                      {/* Drop spacer above this block */}
+                      {bracketInsertAt === i && (
+                        <View style={[styles.bracketInsertSpacer, { height: draggedH, marginTop: i === 0 ? 0 : -TAB_H }]} pointerEvents="none" />
+                      )}
+                      <View style={{ marginTop: i === 0 && bracketInsertAt !== 0 ? 0 : i === 0 ? 0 : -TAB_H, zIndex: inner.length - i + 1 }}>
+                        <CodeBlock block={ib} isFirst={i === 0} isLast={i === inner.length - 1} inBracket />
+                      </View>
+                    </React.Fragment>
+                  ))}
+                  {/* Drop spacer after last block */}
+                  {bracketInsertAt === inner.length && (
+                    <View style={[styles.bracketInsertSpacer, { height: draggedH, marginTop: -TAB_H }]} pointerEvents="none" />
+                  )}
+                </>
+              )
             : (
                 <Animated.View style={[
                   styles.bracketSlotEmpty,
@@ -441,6 +451,14 @@ const styles = StyleSheet.create({
   bracketSlotHovered: {
     // hover styles now applied via Animated.View inline (pulsing teal)
   },
+  bracketInsertSpacer: {
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: 'rgba(91,196,209,0.7)',
+    borderStyle: 'dashed',
+    backgroundColor: 'rgba(91,196,209,0.08)',
+    marginHorizontal: 4,
+  } as any,
 
   bracketBottom: {
     position: 'relative',

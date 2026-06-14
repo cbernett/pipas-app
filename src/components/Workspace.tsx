@@ -30,6 +30,7 @@ export default function Workspace() {
   const [snapTargetId,    setSnapTargetId]    = useState<string | null>(null);
   const [bracketHoverId,  setBracketHoverId]  = useState<string | null>(null);
   const bracketHoverRef   = useRef<string | null>(null);
+  const [bracketInsertPreview, setBracketInsertPreview] = useState<{ bracketBlockId: string; insertAt: number } | null>(null);
   const [snapPreviewPos, setSnapPreviewPos] = useState<{ x: number; y: number; insertAt: number; targetId: string } | null>(null);
   // Library drag ghost block (for snap preview when dragging from library)
   const [libDragBlock, setLibDragBlock]   = useState<WorkspaceBlock | null>(null);
@@ -129,13 +130,11 @@ export default function Workspace() {
   // dragX/dragY should be the cursor canvas position (not block top-left) so
   // the user can reliably point at the bracket interior to trigger the snap.
   const findBracketSnap = useCallback((dragStack: BlockStack, dragX: number, dragY: number):
-    { stackId: string; bracketBlockId: string } | null => {
+    { stackId: string; bracketBlockId: string; innerInsertAt: number } | null => {
     const BRACKET_DEF_IDS = ['ctrl_2', 'ctrl_3', 'ctrl_4'];
-    // Detection zone: from just below the bracketTop label to the bottom of the
-    // entire bracket block (inclusive of bracketBottom).  Generous hit zone so
-    // the user doesn't have to land perfectly in the narrow inner slot.
-    const BRACKET_TOP_H   = 36; // start of inner zone (a little above the visual top)
+    const BRACKET_TOP_H   = 36;
     const ARM_W           = 20;
+    const BOTTOM_H        = 28; // approx bracketBottom height — exclude from inner zone
 
     for (const s of localStacksRef.current) {
       if (s.id === dragStack.id) continue;
@@ -144,15 +143,20 @@ export default function Workspace() {
       for (let bi = 0; bi < s.blocks.length; bi++) {
         const b = s.blocks[bi];
         if (BRACKET_DEF_IDS.includes(b.defId)) {
-          // Use || fallback so a 0 (unmeasured) height also gets the default
-          const blockH   = heights[bi] || 120;
-          const innerTop = s.y + acc + BRACKET_TOP_H;
-          const innerBot = s.y + acc + blockH; // include full bracket height
+          const blockH     = heights[bi] || 120;
+          const innerTop   = s.y + acc + BRACKET_TOP_H;
+          const innerBot   = s.y + acc + blockH - BOTTOM_H;
           const innerLeft  = s.x + ARM_W;
           const innerRight = s.x + 500;
           if (dragX >= innerLeft && dragX <= innerRight &&
-              dragY >= innerTop  && dragY <= innerBot) {
-            return { stackId: s.id, bracketBlockId: b.id };
+              dragY >= innerTop  && dragY <= s.y + acc + blockH) {
+            // Divide inner zone into (N+1) equal slots to find insert position
+            const inner  = b.innerBlocks ?? [];
+            const zoneH  = Math.max(1, innerBot - innerTop);
+            const relY   = Math.max(0, dragY - innerTop);
+            const slot   = zoneH / (inner.length + 1);
+            const innerInsertAt = Math.min(inner.length, Math.max(0, Math.floor(relY / slot)));
+            return { stackId: s.id, bracketBlockId: b.id, innerInsertAt };
           }
         }
         acc += bi === 0 ? (heights[bi] || 58) : ((heights[bi] || 58) - TAB_H);
@@ -314,6 +318,7 @@ export default function Workspace() {
           bracketHoverRef.current = newBId;
           setBracketHoverId(newBId);
         }
+        setBracketInsertPreview(bSnap ? { bracketBlockId: bSnap.bracketBlockId, insertAt: bSnap.innerInsertAt } : null);
         const snap = !bSnap ? findSnap(tempStack, pos.x, pos.y) : null;
         setLibDragBlock(ld.block);
         setSnapTargetId(snap?.id ?? null);
@@ -351,6 +356,7 @@ export default function Workspace() {
           bracketHoverRef.current = newBId;
           setBracketHoverId(newBId);
         }
+        setBracketInsertPreview(bSnap ? { bracketBlockId: bSnap.bracketBlockId, insertAt: bSnap.innerInsertAt } : null);
         const snap = !bSnap ? findSnap(dragStack, newX, newY) : null;
         setSnapTargetId(snap?.id ?? null);
         setSnapPreviewPos(snap ? {
@@ -376,8 +382,12 @@ export default function Workspace() {
 
         if (bracketSnap) {
           const next = stks.map((s: BlockStack) => s.id === bracketSnap.stackId
-            ? { ...s, blocks: s.blocks.map(b => b.id === bracketSnap.bracketBlockId
-                ? { ...b, innerBlocks: [...(b.innerBlocks ?? []), wsBlock] } : b) }
+            ? { ...s, blocks: s.blocks.map(b => {
+                if (b.id !== bracketSnap.bracketBlockId) return b;
+                const inner = [...(b.innerBlocks ?? [])];
+                inner.splice(bracketSnap.innerInsertAt, 0, wsBlock);
+                return { ...b, innerBlocks: inner };
+              }) }
             : s);
           localStacksRef.current = next; setStacks(next);
         } else if (snap) {
@@ -391,7 +401,7 @@ export default function Workspace() {
           addStackRef.current(wsBlock, Math.max(10, pos.x - 60), Math.max(10, pos.y - 30));
         }
         bracketHoverRef.current = null;
-        setLibDragBlock(null); setSnapTargetId(null); setSnapPreviewPos(null); setBracketHoverId(null);
+        setLibDragBlock(null); setSnapTargetId(null); setSnapPreviewPos(null); setBracketHoverId(null); setBracketInsertPreview(null);
         return;
       }
 
@@ -403,6 +413,7 @@ export default function Workspace() {
       setSnapTargetId(null);
       setSnapPreviewPos(null);
       setBracketHoverId(null);
+      setBracketInsertPreview(null);
       setTrashHover(false);
 
       if (!pd) return;
@@ -467,9 +478,12 @@ export default function Workspace() {
           next = stks
             .filter((s: BlockStack) => s.id !== dsId)
             .map((s: BlockStack) => s.id === bracketSnap.stackId
-              ? { ...s, blocks: s.blocks.map(b => b.id === bracketSnap.bracketBlockId
-                  ? { ...b, innerBlocks: [...(b.innerBlocks ?? []), ...dragStk.blocks] }
-                  : b) }
+              ? { ...s, blocks: s.blocks.map(b => {
+                  if (b.id !== bracketSnap.bracketBlockId) return b;
+                  const inner = [...(b.innerBlocks ?? [])];
+                  inner.splice(bracketSnap.innerInsertAt, 0, ...dragStk.blocks);
+                  return { ...b, innerBlocks: inner };
+                }) }
               : s);
         } else if (snap) {
           next = stks
@@ -613,6 +627,8 @@ export default function Workspace() {
                           isDragging={isDragging}
                           isActive={activeBlockId === block.id}
                           isBracketHovered={bracketHoverId === block.id}
+                          bracketInsertAt={bracketInsertPreview?.bracketBlockId === block.id ? bracketInsertPreview.insertAt : undefined}
+                          draggedH={draggedH}
                           onEventTap={isTouchEvent(block)
                             ? () => handleEventTap(block, stack.blocks, bi)
                             : undefined}

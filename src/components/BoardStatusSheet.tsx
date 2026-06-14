@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6,
   },
   monitorTitle: { fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.4)', letterSpacing: 1 },
-  monitorClear: { fontSize: 11, color: '#9268F6', fontWeight: '600' },
+  monitorClear: { fontSize: 11, color: '#5BC4D1', fontWeight: '600' },
   monitorScroll: {
     backgroundColor: '#0D1117', borderRadius: 10, height: 100,
   },

@@ -9,7 +9,7 @@ export default function AppHeader() {
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={styles.container}>
       <View style={styles.row}>
 
         {/* Left: icon tabs with pipe separator */}
@@ -72,11 +72,10 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    paddingLeft: 16,
-    paddingRight: 16,
-    paddingTop: 20,
-    paddingBottom: 0,
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 25,
+    paddingBottom: 15,
   },
 
   // Left — icon tabs
@@ -85,25 +84,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   tab: {
-    paddingHorizontal: 10,
-    paddingVertical: 14,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   tabIcon: {
-    width: 24,
-    height: 24,
+    width: 20,
+    height: 20,
   },
   pipe: {
     width: 1.5,
     height: 18,
     backgroundColor: 'rgba(255,255,255,0.5)',
+    marginHorizontal: 8,
   },
 
   // Center — grows to fill space, centres icon
   centerLogo: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'flex-end',
-    paddingBottom: 10,
+    justifyContent: 'center',
   },
   icon: {
     width: 40,
@@ -114,7 +113,6 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    alignItems: 'flex-end',
-    paddingBottom: 13,
+    alignItems: 'center',
   },
 });

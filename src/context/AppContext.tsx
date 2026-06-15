@@ -126,11 +126,11 @@ async function executeBlock(
     await board.sendCommand(ledType, 0).catch(() => {});  // off
   } else if (defId === 'luz_7') {                         // ligue motor N
     const motor = Math.round(liveNumber(block, 1)) || 1;
-    // motor 1 → pin index 3, motor 2 → pin index 4
-    await board.sendCommand(2 + motor, 1).catch(() => {});
+    // motor 1 → pin index 2, motor 2 → pin index 3
+    await board.sendCommand(motor + 1, 1).catch(() => {});
   } else if (defId === 'luz_8') {                         // desligue motor N
     const motor = Math.round(liveNumber(block, 1)) || 1;
-    await board.sendCommand(2 + motor, 0).catch(() => {});
+    await board.sendCommand(motor + 1, 0).catch(() => {});
   }
 }
 

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { TouchableOpacity, Image, StyleSheet, Platform, View } from 'react-native';
 import { useApp } from '../context/AppContext';
 
@@ -9,36 +9,63 @@ if (Platform.OS === 'web' && typeof document !== 'undefined') {
     const el = document.createElement('style');
     el.id = STYLE_ID;
     el.textContent = `
-      @keyframes pipasGlow {
+      @keyframes pipasCircleGlow {
         0%, 100% {
-          filter: drop-shadow(0 0 3px rgba(91,196,209,0.5));
+          box-shadow: 0 0 3px 1px rgba(91,196,209,0.5);
           opacity: 0.85;
         }
         50% {
-          filter: drop-shadow(0 0 10px rgba(91,196,209,1))
-                  drop-shadow(0 0 22px rgba(91,196,209,0.55));
+          box-shadow: 0 0 8px 3px rgba(91,196,209,1), 0 0 18px 4px rgba(91,196,209,0.5);
           opacity: 1;
         }
       }
-      .pipas-btn-glow {
-        animation: pipasGlow 1.4s ease-in-out infinite;
+      .pipas-circle-glow {
+        animation: pipasCircleGlow 2.8s ease-in-out infinite;
       }
     `;
     document.head.appendChild(el);
   }
 }
 
-// Web-only wrapper that applies the CSS animation directly to a <div>
-function GlowWrapper({ active, children }: { active: boolean; children: React.ReactNode }) {
+// The dot overlay — positioned absolutely over the button image
+function StatusDot({ active }: { active: boolean }) {
+  const BUTTON_H = 31;
+  const DOT_SIZE = 8;
+  const DOT_LEFT = 16;
+  const DOT_TOP = (BUTTON_H - DOT_SIZE) / 2;
+
   if (Platform.OS === 'web') {
-    // @ts-ignore — JSX <div> is fine in React Native Web
     return (
-      <div className={active ? 'pipas-btn-glow' : ''} style={{ display: 'inline-flex' }}>
-        {children}
-      </div>
+      // @ts-ignore
+      <div
+        className={active ? 'pipas-circle-glow' : ''}
+        style={{
+          position: 'absolute',
+          left: DOT_LEFT,
+          top: DOT_TOP,
+          width: DOT_SIZE,
+          height: DOT_SIZE,
+          borderRadius: '50%',
+          backgroundColor: active ? '#5BC4D1' : '#FFFFFF',
+          pointerEvents: 'none',
+        }}
+      />
     );
   }
-  return <View>{children}</View>;
+
+  return (
+    <View
+      style={{
+        position: 'absolute',
+        left: DOT_LEFT,
+        top: DOT_TOP,
+        width: DOT_SIZE,
+        height: DOT_SIZE,
+        borderRadius: DOT_SIZE / 2,
+        backgroundColor: active ? '#5BC4D1' : '#FFFFFF',
+      }}
+    />
+  );
 }
 
 export default function BoardStatusButton() {
@@ -47,7 +74,7 @@ export default function BoardStatusButton() {
 
   return (
     <TouchableOpacity onPress={() => setBoardSheetOpen(true)} activeOpacity={0.7}>
-      <GlowWrapper active={isConnected}>
+      <View style={styles.wrapper}>
         <Image
           source={
             isConnected
@@ -57,14 +84,19 @@ export default function BoardStatusButton() {
           style={styles.icon}
           resizeMode="contain"
         />
-      </GlowWrapper>
+        <StatusDot active={isConnected} />
+      </View>
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
+  wrapper: {
+    width: 121,
+    height: 31,
+  },
   icon: {
-    width: 104,
-    height: 29,
+    width: 121,
+    height: 31,
   },
 });

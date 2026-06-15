@@ -138,6 +138,32 @@ class PipasBoardSerial {
     }
   }
 
+  /** Send a 2-byte brightness command for LED PWM (0–255).
+   *  Protocol: byte1 = 0x6{ledIdx}, byte2 = brightness 0-255.
+   *  ledIdx 0 = LED 1 (pin 13, no true PWM on Uno), ledIdx 1 = LED 2 (pin 5, PWM). */
+  async sendBrightness(ledIdx: number, brightness: number): Promise<void> {
+    if (!this.port?.writable) return;
+    const writer = this.port.writable.getWriter();
+    try {
+      await writer.write(new Uint8Array([(6 << 4) | (ledIdx & 0x0F), brightness & 0xFF]));
+    } finally {
+      writer.releaseLock();
+    }
+  }
+
+  /** Send a 2-byte speed command for motor PWM (0–255).
+   *  Protocol: byte1 = 0x5{pinIdx}, byte2 = speed 0-255.
+   *  Only valid for motor pin indices (2 = motor 1, 3 = motor 2). */
+  async sendSpeed(pinIdx: number, speed: number): Promise<void> {
+    if (!this.port?.writable) return;
+    const writer = this.port.writable.getWriter();
+    try {
+      await writer.write(new Uint8Array([(5 << 4) | (pinIdx & 0x0F), speed & 0xFF]));
+    } finally {
+      writer.releaseLock();
+    }
+  }
+
   private async readLoop() {
     const decoder = new TextDecoder();
 

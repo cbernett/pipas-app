@@ -5,8 +5,8 @@ import { useApp, WorkspaceBlock, BlockStack } from '../context/AppContext';
 import CodeBlock, { TAB_H, TAB_OFFSET } from './CodeBlock';
 
 
-const CANVAS_W   = 2200;
-const CANVAS_H   = 1800;
+const CANVAS_W   = 1200;
+const CANVAS_H   = 1000;
 const SNAP_D     = 30;   // snap detection radius in px
 const DRAG_MIN   = 4;    // min movement to activate drag (lower = more responsive)
 const TRASH_ZONE_CLOSED = 64;   // handle bar height when library is closed
@@ -30,7 +30,7 @@ export default function Workspace() {
   const [snapTargetId,    setSnapTargetId]    = useState<string | null>(null);
   const [bracketHoverId,  setBracketHoverId]  = useState<string | null>(null);
   const bracketHoverRef   = useRef<string | null>(null);
-  const [bracketInsertPreview, setBracketInsertPreview] = useState<{ bracketBlockId: string; insertAt: number } | null>(null);
+  const [bracketInsertPreview, setBracketInsertPreview] = useState<{ bracketBlockId: string; insertAt: number; zone: 'then' | 'else' } | null>(null);
   const [snapPreviewPos, setSnapPreviewPos] = useState<{ x: number; y: number; insertAt: number; targetId: string } | null>(null);
   // Library drag ghost block (for snap preview when dragging from library)
   const [libDragBlock, setLibDragBlock]   = useState<WorkspaceBlock | null>(null);
@@ -130,11 +130,11 @@ export default function Workspace() {
   // dragX/dragY should be the cursor canvas position (not block top-left) so
   // the user can reliably point at the bracket interior to trigger the snap.
   const findBracketSnap = useCallback((dragStack: BlockStack, dragX: number, dragY: number):
-    { stackId: string; bracketBlockId: string; innerInsertAt: number } | null => {
-    const BRACKET_DEF_IDS = ['ctrl_2', 'ctrl_3', 'ctrl_4'];
+    { stackId: string; bracketBlockId: string; innerInsertAt: number; zone: 'then' | 'else' } | null => {
+    const BRACKET_DEF_IDS = ['ctrl_2', 'ctrl_3', 'ctrl_4', 'ctrl_5'];
     const BRACKET_TOP_H   = 36;
     const ARM_W           = 20;
-    const BOTTOM_H        = 28; // approx bracketBottom height — exclude from inner zone
+    const BOTTOM_H        = 28;
 
     for (const s of localStacksRef.current) {
       if (s.id === dragStack.id) continue;
@@ -143,20 +143,36 @@ export default function Workspace() {
       for (let bi = 0; bi < s.blocks.length; bi++) {
         const b = s.blocks[bi];
         if (BRACKET_DEF_IDS.includes(b.defId)) {
-          const blockH     = heights[bi] || 120;
-          const innerTop   = s.y + acc + BRACKET_TOP_H;
-          const innerBot   = s.y + acc + blockH - BOTTOM_H;
-          const innerLeft  = s.x + ARM_W;
-          const innerRight = s.x + 500;
+          const blockH    = heights[bi] || 120;
+          const blockTop  = s.y + acc;
+          const innerLeft = s.x + ARM_W;
+          const innerRight= s.x + 500;
+
           if (dragX >= innerLeft && dragX <= innerRight &&
-              dragY >= innerTop  && dragY <= s.y + acc + blockH) {
-            // Divide inner zone into (N+1) equal slots to find insert position
-            const inner  = b.innerBlocks ?? [];
-            const zoneH  = Math.max(1, innerBot - innerTop);
-            const relY   = Math.max(0, dragY - innerTop);
-            const slot   = zoneH / (inner.length + 1);
-            const innerInsertAt = Math.min(inner.length, Math.max(0, Math.floor(relY / slot)));
-            return { stackId: s.id, bracketBlockId: b.id, innerInsertAt };
+              dragY >= blockTop + BRACKET_TOP_H && dragY <= blockTop + blockH) {
+
+            if (b.defId === 'ctrl_5') {
+              // Split block in half — top = then zone, bottom = else zone
+              const midY   = blockTop + blockH / 2;
+              const zone: 'then' | 'else' = dragY < midY ? 'then' : 'else';
+              const zoneBlocks = zone === 'then' ? (b.innerBlocks ?? []) : (b.elseBlocks ?? []);
+              const zoneTop  = zone === 'then' ? blockTop + BRACKET_TOP_H : midY;
+              const zoneBot  = zone === 'then' ? midY : blockTop + blockH - BOTTOM_H;
+              const zoneH    = Math.max(1, zoneBot - zoneTop);
+              const relY     = Math.max(0, dragY - zoneTop);
+              const slot     = zoneH / (zoneBlocks.length + 1);
+              const insertAt = Math.min(zoneBlocks.length, Math.max(0, Math.floor(relY / slot)));
+              return { stackId: s.id, bracketBlockId: b.id, innerInsertAt: insertAt, zone };
+            } else {
+              const inner  = b.innerBlocks ?? [];
+              const innerTop = blockTop + BRACKET_TOP_H;
+              const innerBot = blockTop + blockH - BOTTOM_H;
+              const zoneH  = Math.max(1, innerBot - innerTop);
+              const relY   = Math.max(0, dragY - innerTop);
+              const slot   = zoneH / (inner.length + 1);
+              const insertAt = Math.min(inner.length, Math.max(0, Math.floor(relY / slot)));
+              return { stackId: s.id, bracketBlockId: b.id, innerInsertAt: insertAt, zone: 'then' };
+            }
           }
         }
         acc += bi === 0 ? (heights[bi] || 58) : ((heights[bi] || 58) - TAB_H);
@@ -318,7 +334,7 @@ export default function Workspace() {
           bracketHoverRef.current = newBId;
           setBracketHoverId(newBId);
         }
-        setBracketInsertPreview(bSnap ? { bracketBlockId: bSnap.bracketBlockId, insertAt: bSnap.innerInsertAt } : null);
+        setBracketInsertPreview(bSnap ? { bracketBlockId: bSnap.bracketBlockId, insertAt: bSnap.innerInsertAt, zone: bSnap.zone } : null);
         const snap = !bSnap ? findSnap(tempStack, pos.x, pos.y) : null;
         setLibDragBlock(ld.block);
         setSnapTargetId(snap?.id ?? null);
@@ -356,7 +372,7 @@ export default function Workspace() {
           bracketHoverRef.current = newBId;
           setBracketHoverId(newBId);
         }
-        setBracketInsertPreview(bSnap ? { bracketBlockId: bSnap.bracketBlockId, insertAt: bSnap.innerInsertAt } : null);
+        setBracketInsertPreview(bSnap ? { bracketBlockId: bSnap.bracketBlockId, insertAt: bSnap.innerInsertAt, zone: bSnap.zone } : null);
         const snap = !bSnap ? findSnap(dragStack, newX, newY) : null;
         setSnapTargetId(snap?.id ?? null);
         setSnapPreviewPos(snap ? {
@@ -384,6 +400,11 @@ export default function Workspace() {
           const next = stks.map((s: BlockStack) => s.id === bracketSnap.stackId
             ? { ...s, blocks: s.blocks.map(b => {
                 if (b.id !== bracketSnap.bracketBlockId) return b;
+                if (bracketSnap.zone === 'else') {
+                  const elseArr = [...(b.elseBlocks ?? [])];
+                  elseArr.splice(bracketSnap.innerInsertAt, 0, wsBlock);
+                  return { ...b, elseBlocks: elseArr };
+                }
                 const inner = [...(b.innerBlocks ?? [])];
                 inner.splice(bracketSnap.innerInsertAt, 0, wsBlock);
                 return { ...b, innerBlocks: inner };
@@ -480,6 +501,11 @@ export default function Workspace() {
             .map((s: BlockStack) => s.id === bracketSnap.stackId
               ? { ...s, blocks: s.blocks.map(b => {
                   if (b.id !== bracketSnap.bracketBlockId) return b;
+                  if (bracketSnap.zone === 'else') {
+                    const elseArr = [...(b.elseBlocks ?? [])];
+                    elseArr.splice(bracketSnap.innerInsertAt, 0, ...dragStk.blocks);
+                    return { ...b, elseBlocks: elseArr };
+                  }
                   const inner = [...(b.innerBlocks ?? [])];
                   inner.splice(bracketSnap.innerInsertAt, 0, ...dragStk.blocks);
                   return { ...b, innerBlocks: inner };
@@ -561,6 +587,7 @@ export default function Workspace() {
         scrollEventThrottle={16}
         showsHorizontalScrollIndicator={false}
         showsVerticalScrollIndicator={false}
+        bounces={false}
         onScroll={e => {
             scrollOffset.current.x = e.nativeEvent.contentOffset.x;
             (window as any).__workspaceScroll = { ...scrollOffset.current };
@@ -571,6 +598,7 @@ export default function Workspace() {
           scrollEnabled={!draggingId}
           scrollEventThrottle={16}
           showsHorizontalScrollIndicator={false}
+          bounces={false}
           showsVerticalScrollIndicator={false}
           onScroll={e => {
             scrollOffset.current.y = e.nativeEvent.contentOffset.y;
@@ -627,7 +655,8 @@ export default function Workspace() {
                           isDragging={isDragging}
                           isActive={activeBlockId === block.id}
                           isBracketHovered={bracketHoverId === block.id}
-                          bracketInsertAt={bracketInsertPreview?.bracketBlockId === block.id ? bracketInsertPreview.insertAt : undefined}
+                          bracketInsertAt={bracketInsertPreview?.bracketBlockId === block.id && bracketInsertPreview.zone === 'then' ? bracketInsertPreview.insertAt : undefined}
+                          elseInsertAt={bracketInsertPreview?.bracketBlockId === block.id && bracketInsertPreview.zone === 'else' ? bracketInsertPreview.insertAt : undefined}
                           draggedH={draggedH}
                           onEventTap={isTouchEvent(block)
                             ? () => handleEventTap(block, stack.blocks, bi)

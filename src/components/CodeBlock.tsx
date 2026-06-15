@@ -12,7 +12,7 @@ export const TAB_OFFSET = 20;
 const BLOCK_R           = 18;
 const WS_BG             = '#1A1F2E';  // workspace background = indent colour
 
-const BRACKET_DEFIDS = ['ctrl_2', 'ctrl_3', 'ctrl_4'];
+const BRACKET_DEFIDS = ['ctrl_2', 'ctrl_3', 'ctrl_4', 'ctrl_5'];
 
 interface Props {
   block: WorkspaceBlock;
@@ -25,6 +25,7 @@ interface Props {
   inBracket?: boolean;
   isBracketHovered?: boolean;
   bracketInsertAt?: number;   // index within innerBlocks to show drop spacer
+  elseInsertAt?: number;      // index within elseBlocks to show drop spacer
   draggedH?: number;          // height of the dragged block (for spacer sizing)
   onEventTap?: () => void;
   onBlockTap?: () => void;
@@ -127,9 +128,12 @@ function Tab({ color }: { color: string }) {
 // Their indents are at ARM_W + TAB_OFFSET from the bracket's left edge.
 const BRACKET_ARM_W = 20;
 
-function BracketBlock({ block, preview, isActive, isBracketHovered, bracketInsertAt, draggedH = 44, parts }: Props & { parts: any[] }) {
+function BracketBlock({ block, preview, isActive, isBracketHovered, bracketInsertAt, elseInsertAt, draggedH = 44, parts }: Props & { parts: any[] }) {
   const inner    = block.innerBlocks ?? [];
   const hasInner = inner.length > 0;
+  const isIfElse = block.defId === 'ctrl_5';
+  const elseInner    = block.elseBlocks ?? [];
+  const hasElseInner = elseInner.length > 0;
 
   // Pulse animation when a block is dragged over this bracket's inner zone
   const hoverAnim = useRef(new Animated.Value(0)).current;
@@ -222,12 +226,58 @@ function BracketBlock({ block, preview, isActive, isBracketHovered, bracketInser
         </Animated.View>
       </View>
 
-      {/* Bottom bar — its indent receives the last inner block's outgoing tab.
-          Indent positioned at innerTabLeft so it aligns with the inner stack. */}
+      {/* For if/else (ctrl_5): senão section between then and bottom */}
+      {isIfElse && !preview && (
+        <>
+          {/* senão bar — same as a bracketTop but labelled "senão" */}
+          <View style={[
+            styles.bracketTop,
+            { backgroundColor: block.color, zIndex: 0 },
+            (hasInner) && { marginTop: -TAB_H },
+          ]}>
+            <View style={[styles.indent, { left: innerTabLeft }]} />
+            <Text style={styles.elseLabel}>senão</Text>
+          </View>
+
+          {/* Tab into else zone */}
+          <View style={{ paddingLeft: innerTabLeft, zIndex: elseInner.length + 2 }}>
+            <Tab color={block.color} />
+          </View>
+
+          {/* else inner zone */}
+          <View style={[styles.bracketBody, { marginTop: -TAB_H, zIndex: 1 }]}>
+            <View style={[styles.bracketArm, { backgroundColor: block.color }]} />
+            <View style={styles.bracketInner}>
+              {hasElseInner
+                ? (
+                    <>
+                      {elseInner.map((ib, i) => (
+                        <React.Fragment key={ib.id}>
+                          {elseInsertAt === i && (
+                            <View style={[styles.bracketInsertSpacer, { height: draggedH, marginTop: i === 0 ? 0 : -TAB_H }]} pointerEvents="none" />
+                          )}
+                          <View style={{ marginTop: i === 0 ? 0 : -TAB_H, zIndex: elseInner.length - i + 1 }}>
+                            <CodeBlock block={ib} isFirst={i === 0} isLast={i === elseInner.length - 1} inBracket />
+                          </View>
+                        </React.Fragment>
+                      ))}
+                      {elseInsertAt === elseInner.length && (
+                        <View style={[styles.bracketInsertSpacer, { height: draggedH, marginTop: -TAB_H }]} pointerEvents="none" />
+                      )}
+                    </>
+                  )
+                : <View style={styles.bracketSlotEmpty} />
+              }
+            </View>
+          </View>
+        </>
+      )}
+
+      {/* Bottom bar */}
       <View style={[
         styles.bracketBottom,
         { backgroundColor: block.color, zIndex: 0 },
-        hasInner && !preview && { marginTop: -TAB_H },
+        (isIfElse ? hasElseInner : hasInner) && !preview && { marginTop: -TAB_H },
       ]}>
         <View style={[styles.indent, { left: innerTabLeft }]} />
       </View>
@@ -343,7 +393,7 @@ const styles = StyleSheet.create({
   // events for native scroll/pan — required for custom pointer-event drag to
   // work on the first grab without the browser intercepting the gesture.
   wrapper:     { alignSelf: 'flex-start', touchAction: 'none' } as any,
-  wrapperFull: { alignSelf: 'stretch',   touchAction: 'none' } as any,
+  wrapperFull: { alignSelf: 'flex-start', touchAction: 'none' } as any,
 
   // ── Indent: workspace-bg colour so the tab from above "fills" the void
   indent: {
@@ -397,11 +447,7 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.15, shadowRadius: 3, elevation: 2,
   },
-  // Full-width variant: stretches edge-to-edge with 32px side padding
-  eventBodyFull: {
-    paddingHorizontal: 32,
-    justifyContent: 'center',
-  },
+  eventBodyFull: {},
 
   // ── Bracket
   bracketTop: {
@@ -459,6 +505,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(91,196,209,0.08)',
     marginHorizontal: 4,
   } as any,
+
+  elseLabel: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 14,
+    fontWeight: '700',
+    paddingLeft: 8,
+  },
 
   bracketBottom: {
     position: 'relative',

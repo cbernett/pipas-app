@@ -42,6 +42,8 @@ interface AppContextType {
   setDraggingBlock: (b: BlockDef | null) => void;
   trashHover: boolean;
   setTrashHover: (v: boolean) => void;
+  boardWarning: string | null;
+  showBoardWarning: () => void;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -55,6 +57,7 @@ export const useApp = () => {
 function liveNumber(block: WorkspaceBlock, paramIdx: number): number {
   const live = liveParamValues.get(`${block.id}_${paramIdx}`);
   if (live !== undefined) return parseFloat(live) || 0;
+  // Fall back to the template default — paramIdx IS the parts array index
   const parts = BLOCK_TEMPLATES[block.defId];
   if (parts) {
     const part = parts[paramIdx];
@@ -62,6 +65,11 @@ function liveNumber(block: WorkspaceBlock, paramIdx: number): number {
   }
   return 0;
 }
+
+// Global volume: 0.0–1.0, shared across all sound playback
+let globalVolume = 1.0;
+// Current brightness per LED (0–100). Shared across executeBlock calls.
+const ledBrightnessPct: [number, number] = [100, 100];
 
 function blockDuration(block: WorkspaceBlock): number {
   // ctrl_1 / ctrl_1b = espere N segundo(s)
@@ -77,11 +85,14 @@ function blockDuration(block: WorkspaceBlock): number {
   return 200;
 }
 
+const BOARD_DEFIDS = new Set(['luz_4', 'luz_5', 'luz_6', 'luz_7', 'luz_8', 'luz_9', 'luz_10', 'luz_11', 'mov_6', 'mov_7', 'mov_8']);
+
 function flattenBlocks(blocks: WorkspaceBlock[]): WorkspaceBlock[] {
   const out: WorkspaceBlock[] = [];
   for (const b of blocks) {
     out.push(b);
     if (b.innerBlocks?.length) out.push(...flattenBlocks(b.innerBlocks));
+    if (b.elseBlocks?.length)  out.push(...flattenBlocks(b.elseBlocks));
   }
   return out;
 }
@@ -99,10 +110,15 @@ async function executeBlock(
     const soundName = liveParamValues.get(`${block.id}_1`)
       ?? label.match(/toque (?:som|até parar)\s+(.+)/)?.[1]?.trim()
       ?? 'meow!';
-    const userSound = getUserSounds().find(s => s.name === soundName);
+    // 'grave som' → play the most recently recorded user sound
+    const allUserSounds = getUserSounds();
+    const userSound = soundName === 'grave som'
+      ? allUserSounds[allUserSounds.length - 1]
+      : allUserSounds.find(s => s.name === soundName);
     if (userSound && Platform.OS === 'web') {
       await new Promise<void>(resolve => {
         const audio = new Audio(userSound.uri);
+        audio.volume = globalVolume;
         audio.onended = () => resolve();
         audio.onerror = () => resolve();
         audio.play().catch(() => resolve());
@@ -124,6 +140,46 @@ async function executeBlock(
     await board.sendCommand(ledType, 1).catch(() => {});  // on
     await new Promise(r => setTimeout(r, 300));
     await board.sendCommand(ledType, 0).catch(() => {});  // off
+  } else if (defId === 'luz_9') {                         // defina LED N brilho X%
+    const ledIdx = (Math.round(liveNumber(block, 1)) || 1) - 1;  // 0 or 1
+    const pct    = Math.min(100, Math.max(0, liveNumber(block, 3)));
+    ledBrightnessPct[ledIdx] = pct;
+    await board.sendBrightness(ledIdx, Math.round(pct * 2.55)).catch(() => {});
+  } else if (defId === 'luz_10') {                        // mude brilho do LED N em delta
+    const ledIdx = (Math.round(liveNumber(block, 1)) || 1) - 1;
+    const delta  = liveNumber(block, 3);                          // parts[3] = number (±)
+    const newPct = Math.min(100, Math.max(0, ledBrightnessPct[ledIdx] + delta));
+    ledBrightnessPct[ledIdx] = newPct;
+    await board.sendBrightness(ledIdx, Math.round(newPct * 2.55)).catch(() => {});
+  } else if (defId === 'luz_11') {                        // pulse LED N por X seg Y vezes
+    const ledIdx  = (Math.round(liveNumber(block, 1)) || 1) - 1;
+    const secs    = Math.min(Math.max(0.2, liveNumber(block, 3) || 5), 30);  // parts[3]
+    const times   = Math.max(1, Math.round(liveNumber(block, 5) || 3));       // parts[5]
+    const totalMs = secs * 1000;
+    const steps   = Math.max(10, Math.round(secs * 20)); // ~20 steps/sec
+    const stepMs  = totalMs / (steps * 2);               // half down, half up
+    for (let t = 0; t < times; t++) {
+      // Turn on at full brightness
+      ledBrightnessPct[ledIdx] = 100;
+      await board.sendBrightness(ledIdx, 255).catch(() => {});
+      await board.sendCommand(ledIdx, 1).catch(() => {});
+      // Fade 100 → 0
+      for (let i = 0; i <= steps; i++) {
+        const pct = 100 - Math.round((i / steps) * 100);
+        await board.sendBrightness(ledIdx, Math.round(pct * 2.55)).catch(() => {});
+        await new Promise(r => setTimeout(r, stepMs));
+      }
+      // Fade 0 → 100
+      for (let i = 0; i <= steps; i++) {
+        const pct = Math.round((i / steps) * 100);
+        await board.sendBrightness(ledIdx, Math.round(pct * 2.55)).catch(() => {});
+        await new Promise(r => setTimeout(r, stepMs));
+      }
+      ledBrightnessPct[ledIdx] = 100;
+    }
+    // Turn off after all pulses complete
+    await board.sendCommand(ledIdx, 0).catch(() => {});
+    ledBrightnessPct[ledIdx] = 100; // reset stored brightness for next use
   } else if (defId === 'luz_7') {                         // ligue motor N
     const motor = Math.round(liveNumber(block, 1)) || 1;
     // motor 1 → pin index 2, motor 2 → pin index 3
@@ -131,6 +187,28 @@ async function executeBlock(
   } else if (defId === 'luz_8') {                         // desligue motor N
     const motor = Math.round(liveNumber(block, 1)) || 1;
     await board.sendCommand(motor + 1, 0).catch(() => {});
+  } else if (defId === 'mov_6') {                      // defina motor N velocidade X%
+    const motor = Math.round(liveNumber(block, 1)) || 1;
+    const pct   = liveNumber(block, 3);               // parts[3] = the number input
+    const pwm   = Math.round(Math.min(100, Math.max(0, pct)) * 2.55); // 0–255
+    await board.sendSpeed(motor + 1, pwm).catch((e) => console.error('[mov_6] sendSpeed error:', e));
+  } else if (defId === 'mov_7') {                      // ligue motor N por X segundo(s)
+    const motor = Math.round(liveNumber(block, 1)) || 1;
+    const secs  = Math.min(liveNumber(block, 3) || 1, 30) * 1000;  // parts[3] = number
+    await board.sendCommand(motor + 1, 1).catch(() => {});
+    await new Promise(r => setTimeout(r, secs));
+    await board.sendCommand(motor + 1, 0).catch(() => {});
+  } else if (defId === 'mov_8') {                      // pulse motor N (on→500ms→off)
+    const motor = Math.round(liveNumber(block, 1)) || 1;
+    await board.sendCommand(motor + 1, 1).catch(() => {});
+    await new Promise(r => setTimeout(r, 500));
+    await board.sendCommand(motor + 1, 0).catch(() => {});
+  } else if (defId === 'som_5') {                         // mude volume em N
+    const delta = liveNumber(block, 1);
+    globalVolume = Math.min(1, Math.max(0, globalVolume + delta / 100));
+  } else if (defId === 'som_6') {                         // mude o volume para N%
+    const pct = liveNumber(block, 1);
+    globalVolume = Math.min(1, Math.max(0, pct / 100));
   }
 }
 
@@ -157,6 +235,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [usbDisconnectedWhileRunning, setUsbDisconnectedWhileRunning] = useState(false);
   const [draggingBlock, setDraggingBlock] = useState<BlockDef | null>(null);
   const [trashHover, setTrashHover]       = useState(false);
+  const [boardWarning, setBoardWarning]   = useState<string | null>(null);
+  const boardWarningTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showBoardWarning = useCallback(() => {
+    setBoardWarning('Conecte a placa para usar este bloco');
+    if (boardWarningTimer.current) clearTimeout(boardWarningTimer.current);
+    boardWarningTimer.current = setTimeout(() => setBoardWarning(null), 2500);
+  }, []);
+
+  const boardStatusRef = useRef(boardStatus);
+  useEffect(() => { boardStatusRef.current = boardStatus; }, [boardStatus]);
 
   // ── User-recorded sounds ─────────────────────────────────────────────────
   const [userSounds, setUserSounds] = useState<UserSound[]>([]);
@@ -219,13 +308,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
 
         // ── se [device] está [ligado/desligado] então ────────────────────
-        if (block.defId === 'ctrl_4') {
-          const device = liveParamValues.get(`${block.id}_1`) ?? 'LED 1';   // e.g. "LED 1"
-          const state  = liveParamValues.get(`${block.id}_2`) ?? 'ligado';  // "ligado" | "desligado"
-          const key    = device.toLowerCase().replace(' ', '_');             // "led_1", "motor_2"
+        if (block.defId === 'ctrl_4' || block.defId === 'ctrl_5') {
+          const device = liveParamValues.get(`${block.id}_1`) ?? 'LED 1';
+          const state  = liveParamValues.get(`${block.id}_3`) ?? 'ligado';  // parts[3] = state dropdown
+          const key    = device.toLowerCase().replace(' ', '_');
           const isOn   = deviceStateRef.current[key] ?? false;
           const condMet = state === 'ligado' ? isOn : !isOn;
-          if (condMet) await runBlocks(block.innerBlocks ?? []);
+          if (condMet) {
+            await runBlocks(block.innerBlocks ?? []);
+          } else if (block.defId === 'ctrl_5') {
+            await runBlocks(block.elseBlocks ?? []);
+          }
           continue;
         }
 
@@ -295,10 +388,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => board.onTouch(handleTouchPad), [handleTouchPad]);
 
   const tapBlock = useCallback((block: WorkspaceBlock) => {
+    if (BOARD_DEFIDS.has(block.defId) && boardStatusRef.current !== 'connected') {
+      showBoardWarning();
+      return;
+    }
     executeBlock(block, () => userSoundsRef.current).catch(() => {});
-  }, []);
+  }, [showBoardWarning]);
 
   const triggerScript = useCallback((blocks: WorkspaceBlock[]) => {
+    const needsBoard = flattenBlocks(blocks).some(b => BOARD_DEFIDS.has(b.defId));
+    if (needsBoard && boardStatusRef.current !== 'connected') {
+      showBoardWarning();
+      return;
+    }
     if (isExecutingRef.current) {
       // som_4 "toque até parar" → play to end, ignore re-triggers
       const hasPlayUntilEnd = flattenBlocks(blocks).some(b => b.defId === 'som_4');
@@ -342,6 +444,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       usbDisconnectedWhileRunning, setUsbDisconnectedWhileRunning,
       draggingBlock, setDraggingBlock,
       trashHover, setTrashHover,
+      boardWarning, showBoardWarning,
       userSounds, addUserSound, deleteUserSound,
     }}>
       {children}

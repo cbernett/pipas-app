@@ -32,7 +32,7 @@ export type BlockPartDef = string | BlockParamDef;
 const TOUCH_OPTS  = ['toque 1', 'toque 2', 'toque 3'];
 const LED_OPTS    = ['1', '2'];
 const MOTOR_OPTS  = ['1', '2'];
-const SOUND_OPTS  = ['meow!', 'bah!', 'cheer', 'erro', 'menu'];
+const SOUND_OPTS  = ['meow!', 'bah!', 'cheer', 'erro', 'menu', 'grave som'];
 const STATE_OPTS  = ['ligado', 'desligado'];
 const DEVICE_OPTS = ['LED 1', 'LED 2', 'motor 1', 'motor 2'];
 
@@ -45,12 +45,19 @@ export const BLOCK_TEMPLATES: Record<string, BlockPartDef[]> = {
   luz_4: ['ligue LED ',    { type: 'dropdown', value: '1', options: LED_OPTS }],
   luz_5: ['desligue LED ', { type: 'dropdown', value: '1', options: LED_OPTS }],
   luz_6: ['pisque LED ',   { type: 'dropdown', value: '1', options: LED_OPTS }],
+  luz_9:  ['defina LED ', { type: 'dropdown', value: '1', options: LED_OPTS }, ' brilho ', { type: 'number', value: '100' }, ' %'],
+  luz_10: ['mude brilho do LED ', { type: 'dropdown', value: '1', options: LED_OPTS }, ' em ', { type: 'number', value: '10' }],
+  luz_11: ['pulse LED ', { type: 'dropdown', value: '1', options: LED_OPTS }, ' por ', { type: 'number', value: '5' }, ' seg ', { type: 'number', value: '3' }, ' vezes'],
   luz_7: ['ligue motor ',    { type: 'dropdown', value: '1', options: MOTOR_OPTS }],
   luz_8: ['desligue motor ', { type: 'dropdown', value: '1', options: MOTOR_OPTS }],
+  mov_6: ['defina motor ', { type: 'dropdown', value: '1', options: MOTOR_OPTS }, ' velocidade ', { type: 'number', value: '100' }, ' %'],
+  mov_7: ['ligue motor ', { type: 'dropdown', value: '1', options: MOTOR_OPTS }, ' por ', { type: 'number', value: '1' }, ' segundo(s)'],
+  mov_8: ['pulse motor ', { type: 'dropdown', value: '1', options: MOTOR_OPTS }],
   som_1: ['toque som ',       { type: 'dropdown', value: 'meow!', options: SOUND_OPTS }],
   som_4: ['toque até parar ', { type: 'dropdown', value: 'meow!', options: SOUND_OPTS }],
   som_2: ['pare todos os sons'],
-  som_3: ['grave som'],
+  som_5: ['mude volume em ',    { type: 'number', value: '-10' }],
+  som_6: ['mude o volume para ', { type: 'number', value: '100' }, ' %'],
   evt_touch_1: ['quando eu receber ', { type: 'dropdown', value: 'toque 1', options: TOUCH_OPTS }],
   evt_touch_2: ['quando eu receber ', { type: 'dropdown', value: 'toque 2', options: TOUCH_OPTS }],
   evt_touch_3: ['quando eu receber ', { type: 'dropdown', value: 'toque 3', options: TOUCH_OPTS }],
@@ -65,11 +72,13 @@ export const BLOCK_TEMPLATES: Record<string, BlockPartDef[]> = {
   ctrl_2:  ['repita ', { type: 'number', value: '10' }, ' vezes'],
   ctrl_3:  ['sempre'],
   ctrl_4:  ['se ', { type: 'dropdown', value: 'LED 1', options: DEVICE_OPTS }, ' está ', { type: 'dropdown', value: 'ligado', options: STATE_OPTS }, ' então'],
+  ctrl_5:  ['se ', { type: 'dropdown', value: 'LED 1', options: DEVICE_OPTS }, ' está ', { type: 'dropdown', value: 'ligado', options: STATE_OPTS }, ' então'],
 };
 
 export interface WorkspaceBlock {
   id: string; defId: string; label: string; category: string; color: string;
   innerBlocks?: WorkspaceBlock[];
+  elseBlocks?: WorkspaceBlock[];
 }
 
 /** A stack is a group of connected blocks at a position on the canvas */
@@ -98,19 +107,27 @@ export const EXAMPLE_STACKS: BlockStack[] = [
 export const EXAMPLE_PROGRAM = EXAMPLE_STACKS[0].blocks;
 
 export const BLOCKS: BlockDef[] = [
-  { id: 'luz_7', label: 'ligue motor 1',    category: 'Movimento' },
-  { id: 'luz_8', label: 'desligue motor 1', category: 'Movimento' },
+  { id: 'luz_7', label: 'ligue motor 1',              category: 'Movimento' },
+  { id: 'luz_8', label: 'desligue motor 1',           category: 'Movimento' },
+  { id: 'mov_6', label: 'defina velocidade do motor', category: 'Movimento' },
+  { id: 'mov_7', label: 'ligue motor por segundos',   category: 'Movimento' },
+  { id: 'mov_8', label: 'pulse motor',                category: 'Movimento' },
   { id: 'luz_4', label: 'ligue LED',                category: 'Luz' },
   { id: 'luz_5', label: 'desligue LED',             category: 'Luz' },
   { id: 'luz_6', label: 'pisque LED',               category: 'Luz' },
+  { id: 'luz_9',  label: 'defina brilho do LED',     category: 'Luz' },
+  { id: 'luz_10', label: 'mude brilho do LED',       category: 'Luz' },
+  { id: 'luz_11', label: 'pulse LED',                 category: 'Luz' },
   { id: 'som_1', label: 'toque som',                category: 'Som' },
   { id: 'som_4', label: 'toque até parar',          category: 'Som' },
   { id: 'som_2', label: 'pare todos os sons',       category: 'Som' },
-  { id: 'som_3', label: 'grave som',                category: 'Som' },
+  { id: 'som_5', label: 'mude volume em',           category: 'Som' },
+  { id: 'som_6', label: 'mude o volume para',       category: 'Som' },
   { id: 'evt_touch_1', label: 'quando eu receber toque 1', category: 'Eventos' },
   { id: 'evt_1', label: 'quando iniciar',            category: 'Eventos' },
   { id: 'ctrl_1', label: 'espere',   category: 'Controle' },
   { id: 'ctrl_2', label: 'repita',   category: 'Controle' },
   { id: 'ctrl_3', label: 'sempre',   category: 'Controle' },
-  { id: 'ctrl_4', label: 'se … então', category: 'Controle' },
+  { id: 'ctrl_4', label: 'se … então',        category: 'Controle' },
+  { id: 'ctrl_5', label: 'se … então / senão', category: 'Controle' },
 ];

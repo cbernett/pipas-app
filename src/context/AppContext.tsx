@@ -68,8 +68,10 @@ function liveNumber(block: WorkspaceBlock, paramIdx: number): number {
 
 // Global volume: 0.0–1.0, shared across all sound playback
 let globalVolume = 1.0;
-// Current brightness per LED (0–100). Shared across executeBlock calls.
+// Current brightness per LED (0–100). Used as pulse peak and by brilho block.
 const ledBrightnessPct: [number, number] = [100, 100];
+// Pulse speed per LED (0–100). 100 = fastest (~0.5s/cycle), 0 = slowest (~5s/cycle).
+const ledVelocityPct: [number, number] = [50, 50];
 
 function blockDuration(block: WorkspaceBlock): number {
   // ctrl_1 / ctrl_1b = espere N segundo(s)
@@ -85,7 +87,7 @@ function blockDuration(block: WorkspaceBlock): number {
   return 200;
 }
 
-const BOARD_DEFIDS = new Set(['luz_4', 'luz_5', 'luz_6', 'luz_7', 'luz_8', 'luz_9', 'luz_10', 'luz_11', 'mov_6', 'mov_7', 'mov_8']);
+const BOARD_DEFIDS = new Set(['luz_4', 'luz_5', 'luz_6', 'luz_7', 'luz_8', 'luz_9', 'luz_10', 'luz_11', 'luz_12', 'mov_6', 'mov_7', 'mov_8']);
 
 function flattenBlocks(blocks: WorkspaceBlock[]): WorkspaceBlock[] {
   const out: WorkspaceBlock[] = [];
@@ -104,8 +106,9 @@ async function executeBlock(
   const label = block.label.toLowerCase();
   const defId = block.defId;
 
-  if (label.includes('toque som') || defId === 'som_1' ||
-      label.includes('toque até parar') || defId === 'som_4') {
+  if (defId === 'som_1' || defId === 'som_4' ||
+      label.includes('toque som') || label.includes('toque até parar')) {
+    const waitForEnd = defId === 'som_4' || label.includes('toque até parar');
     // liveParamValues holds the current dropdown selection; param index 1 is the sound name
     const soundName = liveParamValues.get(`${block.id}_1`)
       ?? label.match(/toque (?:som|até parar)\s+(.+)/)?.[1]?.trim()
@@ -115,17 +118,17 @@ async function executeBlock(
     const userSound = soundName === 'grave som'
       ? allUserSounds[allUserSounds.length - 1]
       : allUserSounds.find(s => s.name === soundName);
-    if (userSound && Platform.OS === 'web') {
-      await new Promise<void>(resolve => {
-        const audio = new Audio(userSound.uri);
-        audio.volume = globalVolume;
-        audio.onended = () => resolve();
-        audio.onerror = () => resolve();
-        audio.play().catch(() => resolve());
-      });
-    } else {
-      await playSound(soundName).catch(() => {});
-    }
+    const playPromise = userSound && Platform.OS === 'web'
+      ? new Promise<void>(resolve => {
+          const audio = new Audio(userSound.uri);
+          audio.volume = globalVolume;
+          audio.onended = () => resolve();
+          audio.onerror = () => resolve();
+          audio.play().catch(() => resolve());
+        })
+      : playSound(soundName).catch(() => {});
+    if (waitForEnd) await playPromise;
+    // som_1: fire and forget — playPromise runs in background
   } else if (defId === 'luz_4') {                         // ligue LED
     // Firmware: pins[] = {13,5,6,12}. Board "LED pin N" = pins[N-1], so subtract 1.
     // LEDs are wired active-high (anode→pin, cathode→GND).
@@ -140,46 +143,42 @@ async function executeBlock(
     await board.sendCommand(ledType, 1).catch(() => {});  // on
     await new Promise(r => setTimeout(r, 300));
     await board.sendCommand(ledType, 0).catch(() => {});  // off
-  } else if (defId === 'luz_9') {                         // defina LED N brilho X%
-    const ledIdx = (Math.round(liveNumber(block, 1)) || 1) - 1;  // 0 or 1
+  } else if (defId === 'luz_9') {                         // defina LED N velocidade X%
+    const ledIdx = (Math.round(liveNumber(block, 1)) || 1) - 1;
+    ledVelocityPct[ledIdx] = Math.min(100, Math.max(0, liveNumber(block, 3)));
+  } else if (defId === 'luz_10') {                        // mude velocidade do LED N por delta
+    const ledIdx = (Math.round(liveNumber(block, 1)) || 1) - 1;
+    const delta  = liveNumber(block, 3);
+    ledVelocityPct[ledIdx] = Math.min(100, Math.max(0, ledVelocityPct[ledIdx] + delta));
+  } else if (defId === 'luz_11') {                        // pulse LED N por Y vezes
+    const ledIdx    = (Math.round(liveNumber(block, 1)) || 1) - 1;
+    const times     = Math.max(1, Math.round(liveNumber(block, 3) || 3));
+    const steps  = 20;
+    // Reciprocal: 100% = 25ms/step (1s cycle), 50% = 50ms/step (2s), 25% = 100ms/step (4s)
+    const vel    = Math.max(1, ledVelocityPct[ledIdx]);
+    const stepMs = Math.min(500, Math.round((100 / vel) * 25));
+    const peakPct   = ledBrightnessPct[ledIdx];
+    for (let t = 0; t < times; t++) {
+      // Fade peak → 0
+      for (let i = 0; i <= steps; i++) {
+        const pct = peakPct - Math.round((i / steps) * peakPct);
+        await board.sendBrightness(ledIdx, Math.round(pct * 2.55)).catch(() => {});
+        await new Promise(r => setTimeout(r, stepMs));
+      }
+      // Fade 0 → peak
+      for (let i = 0; i <= steps; i++) {
+        const pct = Math.round((i / steps) * peakPct);
+        await board.sendBrightness(ledIdx, Math.round(pct * 2.55)).catch(() => {});
+        await new Promise(r => setTimeout(r, stepMs));
+      }
+    }
+    // Turn off after all pulses complete
+    await board.sendBrightness(ledIdx, 0).catch(() => {});
+  } else if (defId === 'luz_12') {                        // mude o brilho do LED N para X%
+    const ledIdx = (Math.round(liveNumber(block, 1)) || 1) - 1;
     const pct    = Math.min(100, Math.max(0, liveNumber(block, 3)));
     ledBrightnessPct[ledIdx] = pct;
     await board.sendBrightness(ledIdx, Math.round(pct * 2.55)).catch(() => {});
-  } else if (defId === 'luz_10') {                        // mude brilho do LED N em delta
-    const ledIdx = (Math.round(liveNumber(block, 1)) || 1) - 1;
-    const delta  = liveNumber(block, 3);                          // parts[3] = number (±)
-    const newPct = Math.min(100, Math.max(0, ledBrightnessPct[ledIdx] + delta));
-    ledBrightnessPct[ledIdx] = newPct;
-    await board.sendBrightness(ledIdx, Math.round(newPct * 2.55)).catch(() => {});
-  } else if (defId === 'luz_11') {                        // pulse LED N por X seg Y vezes
-    const ledIdx  = (Math.round(liveNumber(block, 1)) || 1) - 1;
-    const secs    = Math.min(Math.max(0.2, liveNumber(block, 3) || 5), 30);  // parts[3]
-    const times   = Math.max(1, Math.round(liveNumber(block, 5) || 3));       // parts[5]
-    const totalMs = secs * 1000;
-    const steps   = Math.max(10, Math.round(secs * 20)); // ~20 steps/sec
-    const stepMs  = totalMs / (steps * 2);               // half down, half up
-    for (let t = 0; t < times; t++) {
-      // Turn on at full brightness
-      ledBrightnessPct[ledIdx] = 100;
-      await board.sendBrightness(ledIdx, 255).catch(() => {});
-      await board.sendCommand(ledIdx, 1).catch(() => {});
-      // Fade 100 → 0
-      for (let i = 0; i <= steps; i++) {
-        const pct = 100 - Math.round((i / steps) * 100);
-        await board.sendBrightness(ledIdx, Math.round(pct * 2.55)).catch(() => {});
-        await new Promise(r => setTimeout(r, stepMs));
-      }
-      // Fade 0 → 100
-      for (let i = 0; i <= steps; i++) {
-        const pct = Math.round((i / steps) * 100);
-        await board.sendBrightness(ledIdx, Math.round(pct * 2.55)).catch(() => {});
-        await new Promise(r => setTimeout(r, stepMs));
-      }
-      ledBrightnessPct[ledIdx] = 100;
-    }
-    // Turn off after all pulses complete
-    await board.sendCommand(ledIdx, 0).catch(() => {});
-    ledBrightnessPct[ledIdx] = 100; // reset stored brightness for next use
   } else if (defId === 'luz_7') {                         // ligue motor N
     const motor = Math.round(liveNumber(block, 1)) || 1;
     // motor 1 → pin index 2, motor 2 → pin index 3

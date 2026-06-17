@@ -113,11 +113,8 @@ async function executeBlock(
     const soundName = liveParamValues.get(`${block.id}_1`)
       ?? label.match(/toque (?:som|até parar)\s+(.+)/)?.[1]?.trim()
       ?? 'meow!';
-    // 'grave som' → play the most recently recorded user sound
     const allUserSounds = getUserSounds();
-    const userSound = soundName === 'grave som'
-      ? allUserSounds[allUserSounds.length - 1]
-      : allUserSounds.find(s => s.name === soundName);
+    const userSound = allUserSounds.find(s => s.name === soundName);
     const playPromise = userSound && Platform.OS === 'web'
       ? new Promise<void>(resolve => {
           const audio = new Audio(userSound.uri);

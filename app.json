@@ -4,23 +4,31 @@
     "slug": "pipas-app-rn",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/pipas_icon.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true
     },
     "android": {
+      "package": "com.pipaslabs.app",
+      "versionCode": 1,
+      "permissions": [
+        "android.permission.USB_PERMISSION"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "foregroundImage": "./assets/pipas_icon.png"
       },
       "predictiveBackGestureEnabled": false
     },
     "web": {
       "favicon": "./assets/favicon.png",
       "title": "App Pipas Labs"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "2d39e694-01bf-461b-b32a-66b30513c3a1"
+      }
     }
   }
 }

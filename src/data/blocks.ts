@@ -32,7 +32,7 @@ export type BlockPartDef = string | BlockParamDef;
 const TOUCH_OPTS  = ['toque 1', 'toque 2', 'toque 3'];
 const LED_OPTS    = ['1', '2'];
 const MOTOR_OPTS  = ['1', '2'];
-const SOUND_OPTS  = ['meow!', 'bah!', 'cheer', 'erro', 'menu', 'grave som'];
+const SOUND_OPTS  = ['meow!', 'bah!', 'cheer', 'erro', 'menu'];
 const STATE_OPTS  = ['ligado', 'desligado'];
 const DEVICE_OPTS = ['LED 1', 'LED 2', 'motor 1', 'motor 2'];
 

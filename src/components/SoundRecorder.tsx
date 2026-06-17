@@ -137,7 +137,7 @@ function encodeWav(buf: AudioBuffer): Blob {
 
 // ────────────────────────────────────────────────────────────────────────────
 
-function MicIcon({ size = 26, color = '#FFF' }: { size?: number; color?: string }) {
+export function MicIcon({ size = 26, color = '#FFF' }: { size?: number; color?: string }) {
   const s = size;
   return (
     <View style={{ alignItems: 'center' }}>
@@ -235,7 +235,7 @@ export default function SoundRecorder({ onCancel, onSave }: Props) {
     const rx  = Math.min(W, Math.round(te * W));
     const drawCut = (x: number, w: number) => {
       if (w <= 0) return;
-      ctx.fillStyle = 'rgba(10,8,40,0.72)'; ctx.fillRect(x, 0, w, H);
+      ctx.fillStyle = 'rgba(0,0,0,0.72)'; ctx.fillRect(x, 0, w, H);
       ctx.save(); ctx.beginPath(); ctx.rect(x, 0, w, H); ctx.clip();
       ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.lineWidth = 6;
       for (let sx = x - H; sx < x + w + H; sx += 14) {
@@ -498,53 +498,31 @@ export default function SoundRecorder({ onCancel, onSave }: Props) {
   const fmt    = (s: number) => `${Math.floor(s / 60).toString().padStart(2,'0')}:${(s % 60).toString().padStart(2,'0')}`;
   const fmtSec = (s: number) => `${s.toFixed(1)}s`;
 
+  const isIdle      = stage === 'idle';
+  const isRecording = stage === 'recording';
+  const isPreview   = stage === 'preview';
+
   return (
-    <ScrollView
-      style={styles.scroll}
-      contentContainerStyle={[styles.container, { paddingBottom: Math.max(insets.bottom + 16, 32) }]}
-      keyboardShouldPersistTaps="handled"
-    >
-      {/* ════ IDLE ════ */}
-      {stage === 'idle' && (
-        <View style={styles.idleWrap}>
-          <Text style={styles.idleTitle}>Grave um som</Text>
-          <TouchableOpacity style={styles.bigMicBtn} onPress={startRecording} activeOpacity={0.85}>
-            <MicIcon size={32} color="#FFF" />
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* ════ RECORDING ════ */}
-      {stage === 'recording' && (
-        <View style={styles.recordingWrap}>
-          <Text style={styles.timerText}>{fmt(seconds)}</Text>
-          <View style={styles.eqWrap} onLayout={e => { trackWRef.current = e.nativeEvent.layout.width; }}>
-            {Platform.OS === 'web' ? (
-              // @ts-ignore
-              <canvas ref={setEqCanvas} width={trackWRef.current || 300} height={TRACK_H}
-                style={{ width: '100%', height: TRACK_H }} />
-            ) : <View style={{ height: TRACK_H }} />}
-          </View>
-          <Animated.View style={{ transform: [{ scale: pulse }] }}>
-            <TouchableOpacity style={styles.stopBtn} onPress={stopRecording} activeOpacity={0.85}>
-              <View style={styles.stopSquare} />
-            </TouchableOpacity>
-          </Animated.View>
-          <Text style={styles.hint}>Toque para parar</Text>
-        </View>
-      )}
-
-      {/* ════ PREVIEW ════ */}
-      {stage === 'preview' && (
-        <View style={styles.previewWrap}>
-          {duration > 0 && (
-            <View style={styles.durationBadge}>
-              <Text style={styles.durationText}>
-                {fmtSec(trimStartDisp * duration)} – {fmtSec(trimEndDisp * duration)}
-              </Text>
-            </View>
+    <View style={styles.outerWrap}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* ── Timer ── */}
+        <View style={styles.timerRow}>
+          <Text style={styles.timerText}>
+            {isIdle ? '00:00' : fmt(seconds)}
+          </Text>
+          {isPreview && duration > 0 && (
+            <Text style={styles.timerText}>
+              {fmt(Math.round(trimEndDisp * duration))}
+            </Text>
           )}
+        </View>
 
+        {/* ── Waveform / EQ canvas ── */}
+        {isPreview ? (
           <View
             style={styles.waveWrap}
             onLayout={e => { trackWRef.current = e.nativeEvent.layout.width; }}
@@ -559,116 +537,193 @@ export default function SoundRecorder({ onCancel, onSave }: Props) {
                 style={{ width: '100%', height: TRACK_H, display: 'block' }}
               />
             )}
-            {/* PanResponder overlay — View receives responder events in React Native Web */}
-            <View
-              style={styles.waveOverlay}
-              {...panResponder.panHandlers}
-            />
+            <View style={styles.waveOverlay} {...panResponder.panHandlers} />
           </View>
-
-          <View style={styles.actionRow}>
-            <TouchableOpacity style={[styles.circleBtn, styles.circlePrimary]} onPress={togglePlay}>
-              <Text style={styles.circleIcon}>{isPlaying ? '■' : '▶'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.circleBtn} onPress={() => { trimStartRef.current = 0; setTrimStartDisp(0); drawPreview(); }}>
-              <Text style={styles.circleIconSm}>↩</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.circleBtn} onPress={() => { trimEndRef.current = 1; setTrimEndDisp(1); drawPreview(); }}>
-              <Text style={styles.circleIconSm}>↪</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.circleBtn, styles.circlePrimary]} onPress={resetToIdle}>
-              <MicIcon size={16} color="#FFF" />
-            </TouchableOpacity>
+        ) : (
+          <View
+            style={[styles.eqWrap, isIdle && { backgroundColor: 'rgba(255,255,255,0.04)' }]}
+            onLayout={e => { trackWRef.current = e.nativeEvent.layout.width; }}
+          >
+            {isRecording && Platform.OS === 'web' ? (
+              // @ts-ignore
+              <canvas ref={setEqCanvas} width={trackWRef.current || 300} height={TRACK_H}
+                style={{ width: '100%', height: TRACK_H }} />
+            ) : <View style={{ height: TRACK_H }} />}
           </View>
+        )}
 
-          <Text style={styles.sectionLabel}>Efeitos sonoros</Text>
-          <View style={styles.effectsRow}>
-            {EFFECTS.map(({ id, label }) => (
-              <TouchableOpacity
-                key={id}
-                style={[styles.effectChip, activeEffects.includes(id as Effect) && styles.effectChipActive]}
-                onPress={() => handleEffectSelect(id)}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.effectLabel, activeEffects.includes(id as Effect) && styles.effectLabelActive]}>
-                  {label}
-                </Text>
+        {/* ── Action buttons row ── */}
+        <View style={styles.actionRow}>
+          {isPreview ? (
+            <>
+              <TouchableOpacity style={styles.circleBtn} onPress={() => { trimStartRef.current = 0; setTrimStartDisp(0); drawPreview(); }}>
+                <Text style={styles.circleIconSm}>↩</Text>
               </TouchableOpacity>
-            ))}
-          </View>
-
-          <Text style={styles.sectionLabel}>Nome do som</Text>
-          <TextInput
-            style={styles.nameInput} value={soundName} onChangeText={setSoundName}
-            placeholder="Nome da gravação" placeholderTextColor="rgba(30,27,75,0.4)" selectionColor={TEAL}
-          />
-
-          <TouchableOpacity style={[styles.saveBtn, isSaving && { opacity: 0.6 }]} onPress={handleSave} activeOpacity={0.85} disabled={isSaving}>
-            <Text style={styles.saveBtnText}>{isSaving ? 'A guardar…' : 'Guardar'}</Text>
-          </TouchableOpacity>
+              <TouchableOpacity style={[styles.circleBtn, styles.circlePrimary]} onPress={togglePlay}>
+                <Text style={styles.circleIcon}>{isPlaying ? '■' : '▶'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.circleBtn} onPress={() => { trimEndRef.current = 1; setTrimEndDisp(1); drawPreview(); }}>
+                <Text style={styles.circleIconSm}>↪</Text>
+              </TouchableOpacity>
+            </>
+          ) : isRecording ? (
+            <Animated.View style={{ transform: [{ scale: pulse }] }}>
+              <TouchableOpacity style={styles.stopBtn} onPress={stopRecording} activeOpacity={0.85}>
+                <View style={styles.stopSquare} />
+              </TouchableOpacity>
+            </Animated.View>
+          ) : (
+            <TouchableOpacity style={styles.startBtn} onPress={startRecording} activeOpacity={0.85}>
+              <MicIcon size={26} color="#FFF" />
+            </TouchableOpacity>
+          )}
         </View>
-      )}
 
-      {error && <Text style={styles.errorText}>{error}</Text>}
-    </ScrollView>
+        {(isIdle || isRecording) && (
+          <Text style={styles.hint}>{isIdle ? 'Toque para gravar' : 'Toque para parar'}</Text>
+        )}
+
+        {/* ── Effects ── */}
+        <Text style={styles.sectionLabel}>Efeitos sonoros</Text>
+        <View style={styles.effectsRow}>
+          {EFFECTS.map(({ id, label }) => (
+            <TouchableOpacity
+              key={id}
+              style={[styles.effectChip, isPreview && activeEffects.includes(id as Effect) && styles.effectChipActive]}
+              onPress={isPreview ? () => handleEffectSelect(id) : undefined}
+              activeOpacity={isPreview ? 0.8 : 1}
+            >
+              <Text style={[styles.effectLabel, isPreview && activeEffects.includes(id as Effect) && styles.effectLabelActive]}>
+                {label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* ── Name input ── */}
+        <TextInput
+          style={styles.nameInput}
+          value={soundName}
+          onChangeText={isPreview ? setSoundName : undefined}
+          editable={isPreview}
+          placeholder="Nome da gravação"
+          placeholderTextColor="rgba(255,255,255,0.25)"
+          selectionColor={TEAL}
+        />
+
+        {error && <Text style={styles.errorText}>{error}</Text>}
+      </ScrollView>
+
+      {/* ── CTA bar — absolutely pinned to bottom ── */}
+      <View style={styles.ctaBar}>
+        <TouchableOpacity
+          style={[styles.saveBtn, isPreview ? styles.saveBtnActive : styles.saveBtnInactive]}
+          onPress={isPreview ? handleSave : undefined}
+          disabled={!isPreview || isSaving}
+          activeOpacity={0.85}
+        >
+          <Text style={[styles.saveBtnText, !isPreview && { color: 'rgba(255,255,255,0.4)' }]}>
+            {isSaving ? 'A GUARDAR…' : 'GUARDAR'}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.regravarBtn, isPreview ? styles.regravarBtnActive : styles.regravarBtnInactive]}
+          onPress={isPreview ? resetToIdle : undefined}
+          disabled={!isPreview}
+          activeOpacity={0.85}
+        >
+          <Text style={[styles.regravarText, !isPreview && { color: 'rgba(255,255,255,0.3)' }]}>REGRAVAR</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={onCancel} activeOpacity={0.7} style={styles.cancelLink}>
+          <Text style={styles.cancelLinkText}>Cancelar</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  scroll:    { flex: 1, backgroundColor: '#1E1B4B' },
-  container: { flexGrow: 1, paddingHorizontal: 20, paddingTop: 20 },
+  outerWrap:    { flex: 1, backgroundColor: '#000' },
+  scroll:       { flex: 1 },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 230, gap: 20 },
 
-  idleWrap:  { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 24, paddingVertical: 60 },
-  idleTitle: { fontSize: 22, fontWeight: '800', color: '#FFF' },
-  bigMicBtn: {
-    width: 88, height: 88, borderRadius: 44, backgroundColor: TEAL,
+  timerRow: { flexDirection: 'row', justifyContent: 'center', gap: 24 },
+  timerText: { fontSize: 40, fontWeight: '200', color: '#FFF', letterSpacing: 3 },
+
+  eqWrap:   { width: '100%', borderRadius: 12, backgroundColor: '#111', overflow: 'hidden' as any },
+  waveWrap: { width: '100%', borderRadius: 12, overflow: 'hidden' as any, backgroundColor: '#111', position: 'relative' as any },
+  waveOverlay: { position: 'absolute' as any, top: 0, left: 0, right: 0, bottom: 0, cursor: 'col-resize' as any },
+
+  actionRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 14 },
+
+  startBtn: {
+    width: 72, height: 72, borderRadius: 36, backgroundColor: TEAL,
     alignItems: 'center', justifyContent: 'center',
     shadowColor: TEAL, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.45, shadowRadius: 16,
   },
-
-  recordingWrap: { alignItems: 'center', gap: 20, paddingVertical: 32 },
-  timerText:     { fontSize: 40, fontWeight: '200', color: '#FFF', letterSpacing: 3 },
-  eqWrap:        { width: '100%', borderRadius: 12, backgroundColor: '#111530', overflow: 'hidden' as any },
   stopBtn: {
     width: 56, height: 56, borderRadius: 28, backgroundColor: '#EF4444',
     alignItems: 'center', justifyContent: 'center',
     shadowColor: '#EF4444', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12,
   },
   stopSquare: { width: 20, height: 20, borderRadius: 3, backgroundColor: '#FFF' },
-  hint:       { fontSize: 13, color: 'rgba(255,255,255,0.4)' },
 
-  previewWrap:  { gap: 18 },
-  durationBadge:{ alignSelf: 'center', backgroundColor: '#FFF', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 5 },
-  durationText: { fontSize: 14, fontWeight: '700', color: '#1E1B4B' },
-  waveWrap:     { width: '100%', borderRadius: 12, overflow: 'hidden' as any, backgroundColor: '#111530', position: 'relative' as any },
-  waveOverlay:  { position: 'absolute' as any, top: 0, left: 0, right: 0, bottom: 0, cursor: 'col-resize' as any },
-
-  actionRow: { flexDirection: 'row', justifyContent: 'center', gap: 14 },
   circleBtn: {
-    width: 52, height: 52, borderRadius: 26,
+    width: 48, height: 48, borderRadius: 24,
     backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center',
   },
   circlePrimary: { backgroundColor: TEAL },
   circleIcon:    { color: '#FFF', fontSize: 18, marginLeft: 2 },
-  circleIconSm:  { color: '#FFF', fontSize: 20 },
+  circleIconSm:  { color: '#FFF', fontSize: 18 },
 
-  sectionLabel: { fontSize: 15, fontWeight: '800', color: '#FFF', marginBottom: -4 },
+  hint: { fontSize: 13, color: 'rgba(255,255,255,0.4)', textAlign: 'center' },
+
+  sectionLabel: { fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.4)', letterSpacing: 1, textTransform: 'uppercase' as any },
 
   effectsRow: { flexDirection: 'row', gap: 8 },
   effectChip: {
-    flex: 1, borderRadius: 10, backgroundColor: TEAL,
+    flex: 1, borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.08)',
     paddingVertical: 8, alignItems: 'center', justifyContent: 'center',
   },
-  effectChipActive:  { backgroundColor: '#FFF' },
-  effectLabel:       { fontSize: 11, fontWeight: '800', color: '#FFF', letterSpacing: 0.5 },
-  effectLabelActive: { color: '#1E1B4B' },
+  effectChipActive:  { backgroundColor: TEAL },
+  effectLabel:       { fontSize: 11, fontWeight: '800', color: 'rgba(255,255,255,0.4)', letterSpacing: 0.5 },
+  effectLabelActive: { color: '#FFF' },
 
   nameInput: {
-    backgroundColor: '#FFF', borderRadius: 14,
-    paddingHorizontal: 16, paddingVertical: 14,
-    fontSize: 16, color: '#1E1B4B', fontWeight: '500',
+    borderBottomWidth: 1.5,
+    borderBottomColor: 'rgba(255,255,255,0.4)',
+    paddingVertical: 10,
+    fontSize: 16, color: '#FFF', fontWeight: '500',
+    backgroundColor: 'transparent',
   },
-  saveBtn:     { backgroundColor: TEAL, borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
-  saveBtnText: { fontSize: 16, fontWeight: '800', color: '#FFF' },
-  errorText:   { color: '#EF4444', fontSize: 14, textAlign: 'center' },
+
+  // ── CTA bar ──
+  ctaBar: {
+    position: 'absolute' as any,
+    left: 0, right: 0, bottom: 0,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 64,
+    gap: 0,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: '#000',
+  },
+  saveBtn: {
+    borderRadius: 14, paddingVertical: 16, alignItems: 'center',
+  },
+  saveBtnActive:   { backgroundColor: TEAL },
+  saveBtnInactive: { backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: 0 },
+  saveBtnText: { fontSize: 14, fontWeight: '600', color: '#FFF', letterSpacing: 1.5 },
+
+  regravarBtn: { borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginTop: 10 },
+  regravarBtnActive:   { borderWidth: 1.5, borderColor: '#FFF' },
+  regravarBtnInactive: { borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.2)' },
+  regravarText: { fontSize: 14, fontWeight: '600', color: '#FFF', letterSpacing: 1.5 },
+
+  cancelLink:     { alignItems: 'center', paddingVertical: 16, marginTop: 4 },
+  cancelLinkText: { fontSize: 14, fontWeight: '400', color: '#FFF' },
+
+  errorText: { color: '#EF4444', fontSize: 14, textAlign: 'center' },
 });

@@ -17,7 +17,6 @@ export interface Sound {
 type SubTab = 'biblioteca' | 'meus';
 
 interface Props {
-  onRecord: () => void;
   onSelectSound: (sound: Sound) => void;
   initialSubTab?: SubTab;
 }
@@ -30,7 +29,7 @@ const LIBRARY_SOUNDS: Sound[] = [
   { id: '5', name: 'Menu',     fileKey: 'menu',  duration: '1.0s' },
 ];
 
-export default function SoundList({ onRecord, onSelectSound, initialSubTab = 'biblioteca' }: Props) {
+export default function SoundList({ onSelectSound, initialSubTab = 'biblioteca' }: Props) {
   const [subTab, setSubTab]       = useState<SubTab>(initialSubTab);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const insets                    = useSafeAreaInsets();
@@ -77,7 +76,7 @@ export default function SoundList({ onRecord, onSelectSound, initialSubTab = 'bi
           activeOpacity={0.7}
         >
           <Text style={[styles.subTabText, subTab === 'biblioteca' && styles.subTabActive]}>
-            Biblioteca
+            BIBLIOTECA
           </Text>
           {subTab === 'biblioteca' && <View style={styles.subTabUnderline} />}
         </TouchableOpacity>
@@ -88,7 +87,7 @@ export default function SoundList({ onRecord, onSelectSound, initialSubTab = 'bi
           activeOpacity={0.7}
         >
           <Text style={[styles.subTabText, subTab === 'meus' && styles.subTabActive]}>
-            Meus sons
+            MEUS SONS
           </Text>
           {subTab === 'meus' && <View style={styles.subTabUnderline} />}
         </TouchableOpacity>
@@ -100,7 +99,7 @@ export default function SoundList({ onRecord, onSelectSound, initialSubTab = 'bi
       >
         {visibleSounds.length === 0 && (
           <Text style={styles.emptyText}>
-            Ainda não tens sons gravados.{'\n'}Vai a "Grave um som" para começar!
+            Ainda não tens sons gravados.{'\n'}Toca em GRAVAR para começar!
           </Text>
         )}
 
@@ -159,7 +158,7 @@ export default function SoundList({ onRecord, onSelectSound, initialSubTab = 'bi
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1E1B4B' },
+  container: { flex: 1, backgroundColor: '#000' },
 
   subTabBar: {
     flexDirection: 'row',
@@ -177,7 +176,7 @@ const styles = StyleSheet.create({
     position: 'absolute' as any,
     bottom: 0, left: 0, right: 0,
     height: 2, borderRadius: 1,
-    backgroundColor: '#5BC4D1',
+    backgroundColor: '#FFF',
   },
 
   list: { padding: 16, paddingTop: 14, gap: 12 },

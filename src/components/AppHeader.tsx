@@ -12,37 +12,28 @@ export default function AppHeader() {
     <View style={styles.container}>
       <View style={styles.row}>
 
-        {/* Left: icon tabs with pipe separator */}
+        {/* Left: icon tabs */}
         <View style={styles.tabs}>
-          <TouchableOpacity
-            style={styles.tab}
-            onPress={() => setActiveTab('codigo')}
-            activeOpacity={0.7}
-          >
-            <Image
-              source={activeTab === 'codigo'
-                ? require('../../assets/button-code-selected.png')
-                : require('../../assets/button-code-unselected.png')}
-              style={styles.tabIcon}
-              resizeMode="contain"
-            />
-          </TouchableOpacity>
-
-          <View style={styles.pipe} />
-
-          <TouchableOpacity
-            style={styles.tab}
-            onPress={() => setActiveTab('sons')}
-            activeOpacity={0.7}
-          >
-            <Image
-              source={activeTab === 'sons'
-                ? require('../../assets/button-sound-selected.png')
-                : require('../../assets/button-sound-unselected.png')}
-              style={styles.tabIcon}
-              resizeMode="contain"
-            />
-          </TouchableOpacity>
+          {(['codigo', 'sons'] as const).map((tab) => {
+            const isActive = activeTab === tab;
+            return (
+              <TouchableOpacity
+                key={tab}
+                style={styles.tab}
+                onPress={() => setActiveTab(tab)}
+                activeOpacity={0.7}
+              >
+                <Image
+                  source={isActive
+                    ? (tab === 'codigo' ? require('../../assets/button-code-selected.png') : require('../../assets/button-sound-selected.png'))
+                    : (tab === 'codigo' ? require('../../assets/button-code-unselected.png') : require('../../assets/button-sound-unselected.png'))}
+                  style={styles.tabIcon}
+                  resizeMode="contain"
+                />
+                <View style={[styles.tabUnderline, isActive ? styles.tabUnderlineActive : styles.tabUnderlineInactive]} />
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         {/* Center: icon — flex:1 + alignItems center keeps it truly centred */}
@@ -73,6 +64,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingTop: 25,
     paddingBottom: 15,
@@ -82,25 +74,31 @@ const styles = StyleSheet.create({
   tabs: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
   },
   tab: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 6,
+    paddingBottom: 4,
+    alignItems: 'center',
   },
   tabIcon: {
     width: 20,
     height: 20,
   },
-  pipe: {
-    width: 1.5,
-    height: 18,
-    backgroundColor: 'rgba(255,255,255,0.5)',
-    marginHorizontal: 8,
+  tabUnderline: {
+    height: 2,
+    borderRadius: 1,
+    marginTop: 5,
+    width: '100%',
   },
+  tabUnderlineActive:   { backgroundColor: '#FFF' },
+  tabUnderlineInactive: { backgroundColor: 'rgba(255,255,255,0.25)' },
 
-  // Center — grows to fill space, centres icon
+  // Center — absolutely positioned so left/right content can't push it off-center
   centerLogo: {
-    flex: 1,
+    position: 'absolute',
+    left: 0,
+    right: 0,
     alignItems: 'center',
     justifyContent: 'center',
   },

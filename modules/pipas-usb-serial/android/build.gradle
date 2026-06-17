@@ -1,0 +1,28 @@
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+
+group = 'expo.modules.pipasusbserial'
+version = '1.0.0'
+
+def expoModulesCorePlugin = new File(project(":expo-modules-core").projectDir.absolutePath, "ExpoModulesCorePlugin.gradle")
+apply from: expoModulesCorePlugin
+applyKotlinExpoModulesCorePlugin()
+useCoreDependencies()
+// Note: useExpoPublishing() omitted — local module, not published to Maven
+
+android {
+  namespace "expo.modules.pipasusbserial"
+  compileSdk 36   // must match app project's compileSdk
+  defaultConfig {
+    minSdkVersion 24
+  }
+}
+
+repositories {
+  mavenCentral()
+  maven { url 'https://jitpack.io' }
+}
+
+dependencies {
+  implementation 'com.github.mik3y:usb-serial-for-android:3.7.0'
+}

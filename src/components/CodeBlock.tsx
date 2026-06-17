@@ -335,7 +335,7 @@ function DropdownBubble({ blockId, paramIdx, value, options }: { blockId: string
   const [open, setOpen] = useState(false);
   const [pos, setPos]   = useState({ x: 0, y: 0 });
   const ref = useRef<View>(null);
-  const { userSounds } = useApp();
+  const { userSounds, setActiveTab } = useApp();
   // For sound dropdowns (options includes library sounds), also show user recordings
   const isSoundDropdown = options?.includes('meow!') ?? false;
   const opts = [
@@ -354,6 +354,11 @@ function DropdownBubble({ blockId, paramIdx, value, options }: { blockId: string
       setPos({ x, y: y + h + 4 });
       setOpen(true);
     });
+  };
+
+  const handleRecordNew = () => {
+    setOpen(false);
+    setActiveTab('sons'); // navigate to the record-sound screen
   };
 
   return (
@@ -379,6 +384,18 @@ function DropdownBubble({ blockId, paramIdx, value, options }: { blockId: string
                 </Text>
               </TouchableOpacity>
             ))}
+            {isSoundDropdown && (
+              <>
+                <View style={styles.dropDivider} />
+                <TouchableOpacity
+                  style={styles.dropRecordLink}
+                  onPress={handleRecordNew}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.dropRecordLinkText}>GRAVE UM SOM</Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         </TouchableOpacity>
       </Modal>
@@ -525,20 +542,26 @@ const styles = StyleSheet.create({
   labelRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 5, flexShrink: 1 },
   labelText: { color: '#FFF', fontSize: 14, fontWeight: '700' },
 
-  numBubble: { backgroundColor: '#FFF', borderRadius: 6 },
+  numBubble: {
+    borderBottomWidth: 1.5,
+    borderBottomColor: 'rgba(255,255,255,0.7)',
+    paddingHorizontal: 2,
+  },
   numInput: {
-    color: '#1A1A2E', fontSize: 14, fontWeight: '700', textAlign: 'center',
-    paddingVertical: Platform.OS === 'ios' ? 3 : 1, paddingHorizontal: 4,
+    color: '#FFF', fontSize: 14, fontWeight: '700', textAlign: 'center',
+    paddingVertical: Platform.OS === 'ios' ? 2 : 0, paddingHorizontal: 4,
+    minWidth: 28,
   },
 
   // ── Dropdown bubble
   dropBubble: {
-    backgroundColor: '#FFF', borderRadius: 6,
-    paddingHorizontal: 7, paddingVertical: 4,
-    flexDirection: 'row', alignItems: 'center', gap: 3, flexShrink: 0,
+    borderBottomWidth: 1.5,
+    borderBottomColor: 'rgba(255,255,255,0.7)',
+    paddingHorizontal: 2, paddingVertical: 2,
+    flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 0,
   },
-  dropText:    { color: '#1A1A2E', fontSize: 13, fontWeight: '700' },
-  dropChevron: { color: '#666', fontSize: 10 },
+  dropText:    { color: '#FFF', fontSize: 13, fontWeight: '700' },
+  dropChevron: { color: 'rgba(255,255,255,0.6)', fontSize: 10 },
 
   // ── Dropdown modal menu
   dropOverlay: {
@@ -572,5 +595,17 @@ const styles = StyleSheet.create({
   dropOptionTextActive: {
     color: '#6B4FBB',
     fontWeight: '700',
+  },
+  dropDivider: {
+    height: 1,
+    backgroundColor: '#E2E2E2',
+  },
+  dropRecordLink: {
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    alignItems: 'center',
+  },
+  dropRecordLinkText: {
+    fontSize: 12, fontWeight: '800', color: '#6B4FBB', letterSpacing: 0.5,
   },
 });

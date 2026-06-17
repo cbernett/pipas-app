@@ -1,0 +1,7 @@
+{
+  "name": "pipas-usb-serial",
+  "version": "1.0.0",
+  "description": "Local Expo module: USB serial (CDC/FTDI/CH34x) bridge to the Pipas board, mirroring the Web Serial API surface used by src/serial.ts",
+  "main": "index.ts",
+  "private": true
+}

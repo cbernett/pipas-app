@@ -1,96 +1,118 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useState, useRef } from 'react';
+import { View, StyleSheet, Animated, Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { TouchableOpacity } from 'react-native';
 import SoundList from '../components/SoundList';
-import SoundRecorder from '../components/SoundRecorder';
+import SoundRecorder, { MicIcon } from '../components/SoundRecorder';
 import { useApp } from '../context/AppContext';
 
-type Tab = 'library' | 'record';
+const { height: SCREEN_H } = Dimensions.get('window');
+const FAB_SIZE = 44; // matches RunButton on main screen
 
 export default function SonsScreen() {
-  const [tab, setTab]               = useState<Tab>('library');
-  const [openMeus, setOpenMeus]     = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [landMeus,   setLandMeus]   = useState(false);
+  const slideAnim                   = useRef(new Animated.Value(SCREEN_H)).current;
   const insets                      = useSafeAreaInsets();
   const { addUserSound }            = useApp();
 
-  const handleSave = (name: string, uri?: string) => {
-    if (uri) addUserSound(name, uri);
-    setOpenMeus(true);   // signal SoundList to land on "Meus sons"
-    setTab('library');
+  const openDrawer = () => {
+    setDrawerOpen(true);
+    Animated.spring(slideAnim, {
+      toValue: 0,   // SonsScreen is already below AppHeader, so 0 = just under the top bar
+      useNativeDriver: true,
+      bounciness: 0,
+      speed: 14,
+    }).start();
   };
 
-  const handleGoToLibrary = () => {
-    setOpenMeus(false);
-    setTab('library');
+  const closeDrawer = () => {
+    Animated.timing(slideAnim, {
+      toValue: SCREEN_H,
+      duration: 260,
+      useNativeDriver: true,
+    }).start(() => setDrawerOpen(false));
+  };
+
+  const handleSave = (name: string, uri?: string) => {
+    if (uri) addUserSound(name, uri);
+    setLandMeus(true);
+    closeDrawer();
   };
 
   return (
-    <View style={styles.container}>
-      {/* ── Tab switcher ── */}
-      <View style={[styles.tabBar, { paddingTop: Math.max(insets.top, 12) }]}>
-        <TouchableOpacity
-          style={[styles.tab, tab === 'library' && styles.tabActive]}
-          onPress={handleGoToLibrary}
-          activeOpacity={0.8}
-        >
-          <Text style={[styles.tabText, tab === 'library' && styles.tabTextActive]}>
-            Escolha um som
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, tab === 'record' && styles.tabActive]}
-          onPress={() => setTab('record')}
-          activeOpacity={0.8}
-        >
-          <Text style={[styles.tabText, tab === 'record' && styles.tabTextActive]}>
-            Grave um som
-          </Text>
-        </TouchableOpacity>
-      </View>
+    <View style={styles.root}>
+      {/* ── Main list ── */}
+      <SoundList
+        key={landMeus ? 'meus' : 'biblioteca'}
+        initialSubTab={landMeus ? 'meus' : 'biblioteca'}
+        onSelectSound={() => {}}
+      />
 
-      {/* ── Content ── */}
-      <View style={styles.content}>
-        {tab === 'library' ? (
-          <SoundList
-            key={openMeus ? 'meus' : 'biblioteca'}
-            initialSubTab={openMeus ? 'meus' : 'biblioteca'}
-            onRecord={() => setTab('record')}
-            onSelectSound={() => {}}
-          />
-        ) : (
+      {/* ── Floating mic FAB — same size as RunButton (44×44) ── */}
+      <TouchableOpacity
+        style={[styles.fab, { bottom: insets.bottom + 24 }]}
+        onPress={openDrawer}
+        activeOpacity={0.85}
+      >
+        <MicIcon size={20} color="#FFF" />
+      </TouchableOpacity>
+
+      {/* ── Slide-up drawer ── */}
+      {drawerOpen && (
+        <Animated.View
+          style={[styles.drawer, { transform: [{ translateY: slideAnim }] }]}
+        >
+          {/* Handle pill — matches BlockLibraryBottomSheet */}
+          <View style={styles.drawerHandleArea}>
+            <View style={styles.drawerHandle} />
+          </View>
+
           <SoundRecorder
-            onCancel={() => setTab('library')}
+            onCancel={closeDrawer}
             onSave={handleSave}
           />
-        )}
-      </View>
+        </Animated.View>
+      )}
     </View>
   );
 }
 
-const PURPLE_DARK = '#1E1B4B';
-const PURPLE_MID  = '#2D2775';
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: PURPLE_DARK },
-  tabBar: {
-    flexDirection: 'row',
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingBottom: 14,
-    backgroundColor: PURPLE_MID,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 14,
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.08)',
-  },
-  tabActive: {
+  root: { flex: 1, backgroundColor: '#000' },
+
+  fab: {
+    position: 'absolute',
+    right: 20,
+    width: FAB_SIZE,
+    height: FAB_SIZE,
+    borderRadius: FAB_SIZE / 2,
     backgroundColor: '#5BC4D1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#5BC4D1',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.45,
+    shadowRadius: 10,
+    elevation: 10,
   },
-  tabText:       { fontSize: 14, fontWeight: '700', color: 'rgba(255,255,255,0.5)' },
-  tabTextActive: { color: '#FFF' },
-  content: { flex: 1 },
+
+  drawer: {
+    position: 'absolute',
+    left: 0, right: 0, top: 0, bottom: 0,
+    backgroundColor: '#000',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.35)',
+  },
+  drawerHandleArea: {
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  drawerHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.45)',
+  },
 });

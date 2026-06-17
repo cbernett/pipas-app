@@ -108,13 +108,13 @@ export default function BoardStatusSheet() {
             {/* Actions based on status */}
             {boardStatus === 'connected' && (
               <>
-                <ActionButton label="Desconectar" color="#FFFFFF" outline onPress={handleDisconnect} />
+                <ActionButton label="DESCONECTAR" color="#FFFFFF" outline onPress={handleDisconnect} />
               </>
             )}
             {boardStatus === 'disconnected' && (
               <>
                 <ActionButton
-                  label={connecting ? 'Conectando…' : 'Conectar Placa'}
+                  label={connecting ? 'CONECTANDO…' : 'CONECTAR PLACA'}
                   color="#22C55E"
                   onPress={handleConnect}
                   disabled={connecting}
@@ -126,8 +126,8 @@ export default function BoardStatusSheet() {
             )}
             {boardStatus === 'error' && (
               <>
-                <ActionButton label="Tentar novamente" color="#22C55E" onPress={handleConnect} />
-                <ActionButton label="Desconectar" color="#FFFFFF" outline onPress={handleDisconnect} />
+                <ActionButton label="TENTAR NOVAMENTE" color="#22C55E" onPress={handleConnect} />
+                <ActionButton label="DESCONECTAR" color="#FFFFFF" outline onPress={handleDisconnect} />
               </>
             )}
 

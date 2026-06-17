@@ -99,7 +99,7 @@ export default function SoundList({ onSelectSound, initialSubTab = 'biblioteca' 
       >
         {visibleSounds.length === 0 && (
           <Text style={styles.emptyText}>
-            Ainda não tens sons gravados.{'\n'}Toca em GRAVAR para começar!
+            Toca no botão abaixo para começar.
           </Text>
         )}
 
@@ -182,11 +182,11 @@ const styles = StyleSheet.create({
   list: { padding: 16, paddingTop: 14, gap: 12 },
 
   emptyText: {
-    color: 'rgba(255,255,255,0.35)',
+    color: 'rgba(255,255,255,0.45)',
     fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 22,
-    marginTop: 40,
+    fontWeight: '400',
+    lineHeight: 21,
+    marginTop: 10,
   },
 
   rowWrapper: { position: 'relative' as any },

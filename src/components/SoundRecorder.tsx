@@ -654,7 +654,7 @@ const styles = StyleSheet.create({
   waveWrap: { width: '100%', borderRadius: 12, overflow: 'hidden' as any, backgroundColor: '#111', position: 'relative' as any },
   waveOverlay: { position: 'absolute' as any, top: 0, left: 0, right: 0, bottom: 0, cursor: 'col-resize' as any },
 
-  actionRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 14 },
+  actionRow: { height: 80, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 14 },
 
   startBtn: {
     width: 72, height: 72, borderRadius: 36, backgroundColor: TEAL,
@@ -704,7 +704,7 @@ const styles = StyleSheet.create({
     left: 0, right: 0, bottom: 0,
     paddingHorizontal: 20,
     paddingTop: 16,
-    paddingBottom: 64,
+    paddingBottom: 32,
     gap: 0,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.08)',
@@ -722,7 +722,7 @@ const styles = StyleSheet.create({
   regravarBtnInactive: { borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.2)' },
   regravarText: { fontSize: 14, fontWeight: '600', color: '#FFF', letterSpacing: 1.5 },
 
-  cancelLink:     { alignItems: 'center', paddingVertical: 16, marginTop: 4 },
+  cancelLink:     { alignItems: 'center', paddingVertical: 10, marginTop: 4 },
   cancelLinkText: { fontSize: 14, fontWeight: '400', color: '#FFF' },
 
   errorText: { color: '#EF4444', fontSize: 14, textAlign: 'center' },

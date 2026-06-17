@@ -4,6 +4,7 @@ import { BlockDef, BlockStack, WorkspaceBlock, BLOCK_TEMPLATES } from '../data/b
 import { liveParamValues } from '../components/CodeBlock';
 import { playSound } from '../audio';
 import { board } from '../serial';
+import { loadSounds, saveSound, deleteSound } from '../soundStorage';
 
 export type BoardStatus = 'connected' | 'disconnected' | 'error';
 export type { WorkspaceBlock, BlockStack };
@@ -210,11 +211,16 @@ async function executeBlock(
 
 function findTouchStack(stacks: BlockStack[], pad: number): WorkspaceBlock[] | null {
   for (const stack of stacks) {
-    const idx = stack.blocks.findIndex(b =>
-      b.defId === `evt_touch_${pad}` ||
-      b.defId === `luz_${pad}` ||
-      b.label.toLowerCase().includes(`toque ${pad}`)
-    );
+    const idx = stack.blocks.findIndex(b => {
+      // Pad-specific defId (e.g. luz_1, luz_2, luz_3)
+      if (b.defId === `evt_touch_${pad}` || b.defId === `luz_${pad}`) return true;
+      // Live dropdown value — the touch pad dropdown is always param index 1
+      // (template: ['quando eu receber ', { type: 'dropdown', ... }])
+      const liveVal = liveParamValues.get(`${b.id}_1`);
+      if (liveVal !== undefined) return liveVal === `toque ${pad}`;
+      // Fallback to original label only when no live value has been set
+      return b.label.toLowerCase().includes(`toque ${pad}`);
+    });
     if (idx >= 0) return stack.blocks.slice(idx);
   }
   return null;
@@ -248,13 +254,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const userSoundsRef = useRef<UserSound[]>([]);
   useEffect(() => { userSoundsRef.current = userSounds; }, [userSounds]);
 
+  // Load persisted sounds on mount
+  useEffect(() => {
+    loadSounds().then(sounds => { if (sounds.length) setUserSounds(sounds); });
+  }, []);
+
   const addUserSound = useCallback((name: string, uri: string) => {
     const s: UserSound = { id: `usr_${Date.now()}`, name, uri };
     setUserSounds(prev => [...prev, s]);
+    saveSound(s);
   }, []);
 
   const deleteUserSound = useCallback((id: string) => {
     setUserSounds(prev => prev.filter(s => s.id !== id));
+    deleteSound(id);
   }, []);
 
   const runAbortRef    = useRef(false);

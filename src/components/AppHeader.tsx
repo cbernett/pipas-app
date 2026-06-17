@@ -88,8 +88,8 @@ const styles = StyleSheet.create({
   tabUnderline: {
     height: 2,
     borderRadius: 1,
-    marginTop: 5,
-    width: '100%',
+    marginTop: 8,
+    width: 28,
   },
   tabUnderlineActive:   { backgroundColor: '#FFF' },
   tabUnderlineInactive: { backgroundColor: 'rgba(255,255,255,0.25)' },

@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
+import android.os.Build
 import com.hoho.android.usbserial.driver.UsbSerialDriver
 import com.hoho.android.usbserial.driver.UsbSerialPort
 import com.hoho.android.usbserial.driver.UsbSerialProber
@@ -95,9 +96,10 @@ class PipasUsbSerialModule : Module() {
     baudRate: Int,
     promise: expo.modules.kotlin.Promise
   ) {
+    val explicitIntent = Intent(ACTION_USB_PERMISSION).apply { setPackage(context.packageName) }
     val permissionIntent = PendingIntent.getBroadcast(
-      context, 0, Intent(ACTION_USB_PERMISSION),
-      PendingIntent.FLAG_MUTABLE
+      context, 0, explicitIntent,
+      PendingIntent.FLAG_IMMUTABLE
     )
     val receiver = object : BroadcastReceiver() {
       override fun onReceive(ctx: Context, intent: Intent) {
@@ -114,7 +116,11 @@ class PipasUsbSerialModule : Module() {
       }
     }
     permissionReceiver = receiver
-    context.registerReceiver(receiver, IntentFilter(ACTION_USB_PERMISSION))
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      context.registerReceiver(receiver, IntentFilter(ACTION_USB_PERMISSION), Context.RECEIVER_NOT_EXPORTED)
+    } else {
+      context.registerReceiver(receiver, IntentFilter(ACTION_USB_PERMISSION))
+    }
     manager.requestPermission(driver.device, permissionIntent)
   }
 

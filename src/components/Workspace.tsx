@@ -1,11 +1,11 @@
 import React, { useRef, useState, useCallback, useEffect, useLayoutEffect } from 'react';
 import { View, ScrollView, Text, StyleSheet, Animated, TouchableOpacity, useWindowDimensions, Platform, PanResponder } from 'react-native';
 import { flushSync } from 'react-dom';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import ReAnimated, { useSharedValue, useAnimatedStyle } from 'react-native-reanimated';
+
 import { useApp, WorkspaceBlock, BlockStack } from '../context/AppContext';
 
-// Native-only draggable wrapper — uses RNGH + Reanimated (new-arch safe)
+// Native-only draggable wrapper — PanResponder with onMoveShouldSetPanResponder
+// (this is the approach that worked: block steals gesture from ScrollView mid-move)
 function NativeStackDragger({
   stack,
   onDragStart,
@@ -19,68 +19,52 @@ function NativeStackDragger({
   onTap: () => void;
   children: React.ReactNode;
 }) {
-  const x      = useSharedValue(stack.x);
-  const y      = useSharedValue(stack.y);
-  const startX = useSharedValue(stack.x);
-  const startY = useSharedValue(stack.y);
+  const pan = useRef(new Animated.ValueXY({ x: stack.x, y: stack.y })).current;
 
-  // Keep latest callbacks in refs (updated every render)
-  const onDragStartRef = useRef(onDragStart);
+  // Ref proxies so the frozen PanResponder always calls the latest callbacks
+  const stackIdRef     = useRef(stack.id);
   const onDragEndRef   = useRef(onDragEnd);
   const onTapRef       = useRef(onTap);
-  onDragStartRef.current = onDragStart;
-  onDragEndRef.current   = onDragEnd;
-  onTapRef.current       = onTap;
+  stackIdRef.current   = stack.id;
+  onDragEndRef.current = onDragEnd;
+  onTapRef.current     = onTap;
 
-  // Stable JS-thread functions — safe to pass to runOnJS (no ref access in worklet)
-  const stackId = stack.id;
-  const jsDragStart = useCallback(() => { onDragStartRef.current(); }, []);
-  const jsDragEnd   = useCallback((fx: number, fy: number) => { onDragEndRef.current(stackId, fx, fy); }, [stackId]);
-  const jsTap       = useCallback(() => { onTapRef.current(); }, []);
+  const didMove = useRef(false);
 
   useEffect(() => {
-    x.value = stack.x;
-    y.value = stack.y;
+    pan.setValue({ x: stack.x, y: stack.y });
   }, [stack.id]);
 
-  // .runOnJS(true) runs callbacks on the JS thread — no worklet serialization issues
-  const panGesture = Gesture.Pan()
-    .runOnJS(true)
-    .onStart(() => {
-      startX.value = x.value;
-      startY.value = y.value;
-      jsDragStart();
-    })
-    .onUpdate((e) => {
-      x.value = startX.value + e.translationX;
-      y.value = startY.value + e.translationY;
-    })
-    .onEnd(() => {
-      jsDragEnd(x.value, y.value);
-    });
-
-  const tapGesture = Gesture.Tap()
-    .runOnJS(true)
-    .maxDuration(500)
-    .onEnd(() => {
-      jsTap();
-    });
-
-  const gesture = Gesture.Exclusive(tapGesture, panGesture);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    position: 'absolute' as const,
-    left: x.value,
-    top:  y.value,
-    zIndex: 1,
-  }));
+  const responder = useRef(PanResponder.create({
+    onStartShouldSetPanResponder: () => false,
+    onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 6 || Math.abs(g.dy) > 6,
+    onPanResponderGrant: () => {
+      didMove.current = false;
+      pan.extractOffset();
+    },
+    onPanResponderMove: (_, g) => {
+      didMove.current = true;
+      pan.x.setValue(g.dx);
+      pan.y.setValue(g.dy);
+    },
+    onPanResponderRelease: () => {
+      pan.flattenOffset();
+      if (didMove.current) {
+        onDragEndRef.current(stackIdRef.current, (pan.x as any)._value, (pan.y as any)._value);
+      } else {
+        onTapRef.current();
+      }
+    },
+    onPanResponderTerminate: () => { pan.flattenOffset(); },
+  })).current;
 
   return (
-    <GestureDetector gesture={gesture}>
-      <ReAnimated.View style={animatedStyle}>
-        {children}
-      </ReAnimated.View>
-    </GestureDetector>
+    <Animated.View
+      style={[styles.stackPos, { left: pan.x, top: pan.y, zIndex: 1 }]}
+      {...responder.panHandlers}
+    >
+      {children}
+    </Animated.View>
   );
 }
 import CodeBlock, { TAB_H, TAB_OFFSET } from './CodeBlock';

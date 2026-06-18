@@ -13,6 +13,9 @@ interface Props {
 
 const DRAG_MIN = 8;
 
+// Tracks placement count so each tapped block lands in a different spot
+let nativePlaceCount = 0;
+
 function LibraryBlockItemWeb({ block, addStack }: { block: BlockDef; addStack: (b: WorkspaceBlock, x?: number, y?: number) => void }) {
   const ref = useRef<View>(null);
 
@@ -106,7 +109,13 @@ function LibraryBlockItemNative({ block, addStack }: { block: BlockDef; addStack
     <TouchableOpacity
       style={styles.blockItem}
       activeOpacity={0.7}
-      onPress={() => addStack(wsBlock, 40 + Math.random() * 120, 40 + Math.random() * 120)}
+      onPress={() => {
+        // Place each new block in a grid so they don't overlap
+        const col = nativePlaceCount % 3;
+        const row = Math.floor(nativePlaceCount / 3) % 4;
+        nativePlaceCount++;
+        addStack(wsBlock, 40 + col * 220, 60 + row * 140);
+      }}
     >
       <CodeBlock block={wsBlock} preview showBracket={isBracket} isFirst isLast />
     </TouchableOpacity>

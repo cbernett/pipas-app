@@ -19,6 +19,15 @@ function NativeStackDragger({
 }) {
   const pan = useRef(new Animated.ValueXY({ x: stack.x, y: stack.y })).current;
   const moved = useRef(false);
+  const stackIdRef   = useRef(stack.id);
+  const onDragStartRef = useRef(onDragStart);
+  const onDragEndRef   = useRef(onDragEnd);
+  const onTapRef       = useRef(onTap);
+  // Keep refs current every render so the frozen PanResponder always calls latest callbacks
+  stackIdRef.current   = stack.id;
+  onDragStartRef.current = onDragStart;
+  onDragEndRef.current   = onDragEnd;
+  onTapRef.current       = onTap;
 
   useEffect(() => {
     pan.setValue({ x: stack.x, y: stack.y });
@@ -26,7 +35,6 @@ function NativeStackDragger({
 
   const responder = useRef(
     PanResponder.create({
-      // Claim the touch immediately so ScrollView doesn't intercept first
       onStartShouldSetPanResponder: () => true,
       onPanResponderGrant: () => {
         moved.current = false;
@@ -36,7 +44,7 @@ function NativeStackDragger({
         if (Math.abs(g.dx) > 5 || Math.abs(g.dy) > 5) {
           if (!moved.current) {
             moved.current = true;
-            onDragStart();
+            onDragStartRef.current();
           }
           pan.x.setValue(g.dx);
           pan.y.setValue(g.dy);
@@ -45,9 +53,9 @@ function NativeStackDragger({
       onPanResponderRelease: () => {
         pan.flattenOffset();
         if (!moved.current) {
-          onTap();
+          onTapRef.current();
         } else {
-          onDragEnd(stack.id, (pan.x as any)._value, (pan.y as any)._value);
+          onDragEndRef.current(stackIdRef.current, (pan.x as any)._value, (pan.y as any)._value);
         }
       },
       onPanResponderTerminate: () => {

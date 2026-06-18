@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../context/AppContext';
 import BoardStatusButton from './BoardStatusButton';
@@ -10,6 +10,11 @@ export default function AppHeader() {
 
   return (
     <View style={styles.container}>
+      {Platform.OS !== 'web' && (
+        <View style={{ backgroundColor: '#5BC4D1', paddingVertical: 2, alignItems: 'center' }}>
+          <Text style={{ color: '#000', fontSize: 10, fontWeight: '700' }}>BUILD v7 — 18 JUN</Text>
+        </View>
+      )}
       <View style={[styles.row, { paddingTop: Math.max(insets.top, 10) + 10 }]}>
 
         {/* Left: icon tabs */}

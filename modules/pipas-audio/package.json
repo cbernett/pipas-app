@@ -1,0 +1,7 @@
+{
+  "name": "pipas-audio",
+  "version": "1.0.0",
+  "description": "Local Expo module: Android MediaPlayer audio playback for Pipas app sounds",
+  "main": "index.ts",
+  "private": true
+}

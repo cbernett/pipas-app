@@ -107,14 +107,18 @@ class PipasBoardSerialNative {
   }
 
   private parseByte(n: number) {
-    // Native module delivers raw bytes (already 0-255), not ASCII chars —
-    // touch protocol sends ASCII '0'/'1'/'2', so decode the same way as web.
-    const ch = n >= 0x30 && n <= 0x39 ? n - 0x30 : NaN;
-    if (isNaN(ch)) return;
-    const pad = ch + 1;
-    if (pad < 1 || pad > 3) return;
-    this.emitRaw(`toque ${pad}`);
-    this.emitTouch(pad);
+    // Protocol: board sends ASCII '0', '1', '2' for pad 1, 2, 3
+    if (n >= 0x30 && n <= 0x32) {
+      const pad = (n - 0x30) + 1;
+      this.emitRaw(`toque ${pad}`);
+      this.emitTouch(pad);
+      return;
+    }
+    // Ignore CR/LF silently
+    if (n === 0x0A || n === 0x0D) return;
+    // Log unexpected bytes so we can diagnose baud rate / protocol mismatches
+    const printable = n >= 0x20 && n < 0x7F;
+    this.emitRaw(`[byte: 0x${n.toString(16).padStart(2, '0')}${printable ? ` '${String.fromCharCode(n)}'` : ''}]`);
   }
 }
 

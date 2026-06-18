@@ -139,6 +139,9 @@ class PipasUsbSerialModule : Module() {
       val p = driver.ports[0]
       p.open(connection)
       p.setParameters(baudRate, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE)
+      // DTR/RTS signals some boards to start transmitting
+      try { p.dtr = true } catch (_: Exception) {}
+      try { p.rts = true } catch (_: Exception) {}
       port = p
 
       val listener = object : SerialInputOutputManager.Listener {

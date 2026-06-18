@@ -29,9 +29,9 @@ if (Platform.OS === 'web' && typeof document !== 'undefined') {
 
 // The dot overlay — positioned absolutely over the button image
 function StatusDot({ active }: { active: boolean }) {
-  const BUTTON_H = 31;
-  const DOT_SIZE = 8;
-  const DOT_LEFT = 16;
+  const BUTTON_H = 26;
+  const DOT_SIZE = 7;
+  const DOT_LEFT = 13;
   const DOT_TOP = (BUTTON_H - DOT_SIZE) / 2;
 
   if (Platform.OS === 'web') {
@@ -92,11 +92,11 @@ export default function BoardStatusButton() {
 
 const styles = StyleSheet.create({
   wrapper: {
-    width: 121,
-    height: 31,
+    width: 100,
+    height: 26,
   },
   icon: {
-    width: 121,
-    height: 31,
+    width: 100,
+    height: 26,
   },
 });

@@ -67,7 +67,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
 
-    paddingBottom: 15,
+    paddingBottom: 10,
   },
 
   // Left — icon tabs
@@ -82,8 +82,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   tabIcon: {
-    width: 20,
-    height: 20,
+    width: 18,
+    height: 18,
   },
   tabUnderline: {
     height: 2,
@@ -94,17 +94,20 @@ const styles = StyleSheet.create({
   tabUnderlineActive:   { backgroundColor: '#FFF' },
   tabUnderlineInactive: { backgroundColor: 'rgba(255,255,255,0.25)' },
 
-  // Center — absolutely positioned so left/right content can't push it off-center
+  // Center — absolutely positioned so left/right content can't push it off-center.
+  // top/bottom: 0 ensures it fills the row height so justifyContent: 'center' works.
   centerLogo: {
     position: 'absolute',
+    top: 0,
+    bottom: 0,
     left: 0,
     right: 0,
     alignItems: 'center',
     justifyContent: 'center',
   },
   icon: {
-    width: 40,
-    height: 40,
+    width: 32,
+    height: 32,
   },
 
   // Right — connect button

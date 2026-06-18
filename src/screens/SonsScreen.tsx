@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { View, StyleSheet, Animated, Dimensions } from 'react-native';
+import { View, StyleSheet, Animated, Dimensions, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TouchableOpacity } from 'react-native';
 import SoundList from '../components/SoundList';
@@ -51,7 +51,7 @@ export default function SonsScreen() {
 
       {/* ── Floating mic FAB — same size as RunButton (44×44) ── */}
       <TouchableOpacity
-        style={[styles.fab, { bottom: insets.bottom + 24 }]}
+        style={[styles.fab, { bottom: Platform.OS === 'web' ? insets.bottom + 24 : 24 }]}
         onPress={openDrawer}
         activeOpacity={0.85}
       >

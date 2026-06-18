@@ -18,7 +18,21 @@ module.exports = function withUsbSerial(config) {
     },
   ]);
 
-  // Step 2: add the intent-filter and meta-data to MainActivity
+  // Step 2: copy sound files into Android assets so PipasAudio (MediaPlayer) can load them
+  config = withDangerousMod(config, [
+    'android',
+    async (cfg) => {
+      const destDir = path.join(cfg.modRequest.platformProjectRoot, 'app/src/main/assets/sounds');
+      fs.mkdirSync(destDir, { recursive: true });
+      const srcDir = path.join(cfg.modRequest.projectRoot, 'assets/sounds');
+      for (const file of fs.readdirSync(srcDir)) {
+        fs.copyFileSync(path.join(srcDir, file), path.join(destDir, file));
+      }
+      return cfg;
+    },
+  ]);
+
+  // Step 3: add the intent-filter and meta-data to MainActivity
   config = withAndroidManifest(config, (cfg) => {
     const manifest = cfg.modResults;
     const app = manifest.manifest.application[0];

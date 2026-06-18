@@ -22,8 +22,9 @@ function NativeStackDragger({
 
   const responder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
+      // Don't claim tap — only claim once a drag is detected
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 6 || Math.abs(g.dy) > 6,
       onPanResponderGrant: () => {
         pan.extractOffset();
       },
@@ -721,7 +722,26 @@ export default function Workspace() {
                     key={stack.id}
                     stack={stack}
                     onDragEnd={(id, x, y) => {
-                      setStacks(prev => prev.map(s => s.id === id ? { ...s, x, y } : s));
+                      const stks = localStacksRef.current;
+                      const dragStk = stks.find(s => s.id === id);
+                      if (!dragStk) return;
+                      const updatedDrag = { ...dragStk, x, y };
+                      const snap = findSnap(updatedDrag, x, y);
+                      let next: BlockStack[];
+                      if (snap) {
+                        next = stks
+                          .filter((s: BlockStack) => s.id !== id)
+                          .map((s: BlockStack) => {
+                            if (s.id !== snap.id) return s;
+                            const merged = [...s.blocks];
+                            merged.splice(snap.insertAt, 0, ...dragStk.blocks);
+                            return { ...s, blocks: merged };
+                          });
+                      } else {
+                        next = stks.map((s: BlockStack) => s.id === id ? { ...s, x, y } : s);
+                      }
+                      localStacksRef.current = next;
+                      setStacks(next);
                     }}
                   >
                     {stackContent}

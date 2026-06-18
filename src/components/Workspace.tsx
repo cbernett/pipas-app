@@ -24,17 +24,20 @@ function NativeStackDragger({
   const startX = useSharedValue(stack.x);
   const startY = useSharedValue(stack.y);
 
-  // Ref proxies so gesture callbacks always call the latest JS functions
-  const stackIdRef      = useRef(stack.id);
-  const onDragStartRef  = useRef(onDragStart);
-  const onDragEndRef    = useRef(onDragEnd);
-  const onTapRef        = useRef(onTap);
-  stackIdRef.current    = stack.id;
-  onDragStartRef.current  = onDragStart;
-  onDragEndRef.current    = onDragEnd;
-  onTapRef.current        = onTap;
+  // Keep latest callbacks in refs (updated every render)
+  const onDragStartRef = useRef(onDragStart);
+  const onDragEndRef   = useRef(onDragEnd);
+  const onTapRef       = useRef(onTap);
+  onDragStartRef.current = onDragStart;
+  onDragEndRef.current   = onDragEnd;
+  onTapRef.current       = onTap;
 
-  // Sync position when a new stack is created (addStack sets initial coords)
+  // Stable JS-thread functions — safe to pass to runOnJS (no ref access in worklet)
+  const stackId = stack.id;
+  const jsDragStart = useCallback(() => { onDragStartRef.current(); }, []);
+  const jsDragEnd   = useCallback((fx: number, fy: number) => { onDragEndRef.current(stackId, fx, fy); }, [stackId]);
+  const jsTap       = useCallback(() => { onTapRef.current(); }, []);
+
   useEffect(() => {
     x.value = stack.x;
     y.value = stack.y;
@@ -42,26 +45,28 @@ function NativeStackDragger({
 
   const panGesture = Gesture.Pan()
     .onStart(() => {
+      'worklet';
       startX.value = x.value;
       startY.value = y.value;
-      runOnJS(() => onDragStartRef.current())();
+      runOnJS(jsDragStart)();
     })
     .onUpdate((e) => {
+      'worklet';
       x.value = startX.value + e.translationX;
       y.value = startY.value + e.translationY;
     })
     .onEnd(() => {
-      runOnJS((id: string, fx: number, fy: number) => onDragEndRef.current(id, fx, fy))(
-        stackIdRef.current, x.value, y.value
-      );
+      'worklet';
+      runOnJS(jsDragEnd)(x.value, y.value);
     });
 
   const tapGesture = Gesture.Tap()
+    .maxDuration(500)
     .onEnd(() => {
-      runOnJS(() => onTapRef.current())();
+      'worklet';
+      runOnJS(jsTap)();
     });
 
-  // Tap has priority; if finger moves > threshold RNGH switches to pan
   const gesture = Gesture.Exclusive(tapGesture, panGesture);
 
   const animatedStyle = useAnimatedStyle(() => ({

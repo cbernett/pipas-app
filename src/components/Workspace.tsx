@@ -2,7 +2,7 @@ import React, { useRef, useState, useCallback, useEffect, useLayoutEffect } from
 import { View, ScrollView, Text, StyleSheet, Animated, TouchableOpacity, useWindowDimensions, Platform, PanResponder } from 'react-native';
 import { flushSync } from 'react-dom';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import ReAnimated, { useSharedValue, useAnimatedStyle, runOnJS } from 'react-native-reanimated';
+import ReAnimated, { useSharedValue, useAnimatedStyle } from 'react-native-reanimated';
 import { useApp, WorkspaceBlock, BlockStack } from '../context/AppContext';
 
 // Native-only draggable wrapper — uses RNGH + Reanimated (new-arch safe)
@@ -43,28 +43,27 @@ function NativeStackDragger({
     y.value = stack.y;
   }, [stack.id]);
 
+  // .runOnJS(true) runs callbacks on the JS thread — no worklet serialization issues
   const panGesture = Gesture.Pan()
+    .runOnJS(true)
     .onStart(() => {
-      'worklet';
       startX.value = x.value;
       startY.value = y.value;
-      runOnJS(jsDragStart)();
+      jsDragStart();
     })
     .onUpdate((e) => {
-      'worklet';
       x.value = startX.value + e.translationX;
       y.value = startY.value + e.translationY;
     })
     .onEnd(() => {
-      'worklet';
-      runOnJS(jsDragEnd)(x.value, y.value);
+      jsDragEnd(x.value, y.value);
     });
 
   const tapGesture = Gesture.Tap()
+    .runOnJS(true)
     .maxDuration(500)
     .onEnd(() => {
-      'worklet';
-      runOnJS(jsTap)();
+      jsTap();
     });
 
   const gesture = Gesture.Exclusive(tapGesture, panGesture);

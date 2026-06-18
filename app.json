@@ -25,6 +25,9 @@
       "favicon": "./assets/favicon.png",
       "title": "App Pipas Labs"
     },
+    "plugins": [
+      "./plugins/withUsbSerial"
+    ],
     "extra": {
       "eas": {
         "projectId": "2d39e694-01bf-461b-b32a-66b30513c3a1"

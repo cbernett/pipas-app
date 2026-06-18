@@ -13,7 +13,7 @@ function AppContent() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor="#000000" />
+      <StatusBar barStyle="light-content" backgroundColor="#000000" translucent={false} />
       <AppHeader />
       <View style={styles.content}>
         {activeTab === 'codigo' ? <CodigoScreen /> : <SonsScreen />}

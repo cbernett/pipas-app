@@ -10,7 +10,7 @@ export default function AppHeader() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.row}>
+      <View style={[styles.row, { paddingTop: Math.max(insets.top, 10) + 10 }]}>
 
         {/* Left: icon tabs */}
         <View style={styles.tabs}>
@@ -66,7 +66,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 25,
+
     paddingBottom: 15,
   },
 

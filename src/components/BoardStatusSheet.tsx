@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Modal, View, Text, TouchableOpacity, StyleSheet, Pressable, ScrollView } from 'react-native';
+import { Modal, View, Text, TouchableOpacity, StyleSheet, Pressable, ScrollView, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, BoardStatus } from '../context/AppContext';
 import { board } from '../serial';
@@ -40,7 +40,9 @@ export default function BoardStatusSheet() {
 
   const handleConnect = async () => {
     if (!board.isSupported) {
-      setConnectError('Web Serial não disponível neste navegador. Abra o app no Google Chrome em um computador.');
+      setConnectError(Platform.OS === 'web'
+        ? 'Web Serial não disponível neste navegador. Abra o app no Google Chrome em um computador.'
+        : 'Nenhuma placa encontrada. Conecte a placa via cabo USB-OTG e tente novamente.');
       return;
     }
     setConnectError(null);

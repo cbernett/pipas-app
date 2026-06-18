@@ -1,6 +1,6 @@
 import React from 'react';
-import { View, StyleSheet, StatusBar } from 'react-native';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { View, StyleSheet, StatusBar, Text, TextInput, Platform } from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AppProvider, useApp } from './src/context/AppContext';
 import AppHeader from './src/components/AppHeader';
@@ -8,11 +8,19 @@ import BoardStatusSheet from './src/components/BoardStatusSheet';
 import CodigoScreen from './src/screens/CodigoScreen';
 import SonsScreen from './src/screens/SonsScreen';
 
+// Prevent Android system font scale from inflating all text
+if (Platform.OS === 'android') {
+  const oldTextRender = (Text as any).render;
+  (Text as any).defaultProps = { ...(Text as any).defaultProps, allowFontScaling: false };
+  (TextInput as any).defaultProps = { ...(TextInput as any).defaultProps, allowFontScaling: false };
+}
+
 function AppContent() {
   const { activeTab } = useApp();
+  const insets = useSafeAreaInsets();
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { paddingBottom: insets.bottom }]}>
       <StatusBar barStyle="light-content" backgroundColor="#000000" translucent={false} />
       <AppHeader />
       <View style={styles.content}>

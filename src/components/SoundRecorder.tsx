@@ -156,6 +156,18 @@ export function MicIcon({ size = 26, color = '#FFF' }: { size?: number; color?: 
 }
 
 export default function SoundRecorder({ onCancel, onSave }: Props) {
+  if (Platform.OS !== 'web') {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, backgroundColor: '#000' }}>
+        <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 16, textAlign: 'center', lineHeight: 24 }}>
+          Gravação de sons não está disponível no celular ainda.{'\n\n'}Use o app no computador para gravar sons.
+        </Text>
+        <TouchableOpacity onPress={onCancel} style={{ marginTop: 32, paddingVertical: 14, paddingHorizontal: 32, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
+          <Text style={{ color: '#fff', fontSize: 16 }}>Voltar</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
   const [stage, setStage]         = useState<Stage>('idle');
   const [seconds, setSeconds]     = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);

@@ -1,7 +1,49 @@
 import React, { useRef, useState, useCallback, useEffect, useLayoutEffect } from 'react';
-import { View, ScrollView, Text, StyleSheet, Animated, TouchableOpacity, useWindowDimensions } from 'react-native';
+import { View, ScrollView, Text, StyleSheet, Animated, TouchableOpacity, useWindowDimensions, Platform, PanResponder } from 'react-native';
 import { flushSync } from 'react-dom';
 import { useApp, WorkspaceBlock, BlockStack } from '../context/AppContext';
+
+// Native-only draggable wrapper for a block stack (Android)
+function NativeStackDragger({
+  stack,
+  onDragEnd,
+  children,
+}: {
+  stack: BlockStack;
+  onDragEnd: (id: string, x: number, y: number) => void;
+  children: React.ReactNode;
+}) {
+  const pan = useRef(new Animated.ValueXY({ x: stack.x, y: stack.y })).current;
+
+  // Sync if stack position changes externally (e.g. addStack)
+  useEffect(() => {
+    pan.setValue({ x: stack.x, y: stack.y });
+  }, [stack.id]); // only re-sync on stack creation, not every x/y update
+
+  const responder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        pan.extractOffset();
+      },
+      onPanResponderMove: Animated.event([null, { dx: pan.x, dy: pan.y }], { useNativeDriver: false }),
+      onPanResponderRelease: () => {
+        pan.flattenOffset();
+        onDragEnd(stack.id, (pan.x as any)._value, (pan.y as any)._value);
+      },
+    })
+  ).current;
+
+  return (
+    <Animated.View
+      style={[styles.stackPos, { left: pan.x, top: pan.y, zIndex: 1 }]}
+      {...responder.panHandlers}
+    >
+      {children}
+    </Animated.View>
+  );
+}
 import CodeBlock, { TAB_H, TAB_OFFSET } from './CodeBlock';
 
 
@@ -624,11 +666,11 @@ export default function Workspace() {
               // Height of the spacer = height of what's being dragged (or library block)
               const draggedH    = draggingStack ? (stackHeightsRef.current[draggingStack.id] ?? 44) : 44;
 
-              return (
+              const stackContent = (
                 <Animated.View
                   key={stack.id}
                   onLayout={e => { stackHeightsRef.current[stack.id] = e.nativeEvent.layout.height; }}
-                  style={[
+                  style={Platform.OS !== 'web' ? undefined : [
                     styles.stackPos,
                     isDragging
                       ? { left: dragAnimX, top: dragAnimY, zIndex: 200, opacity: 0.92 }
@@ -672,6 +714,21 @@ export default function Workspace() {
                   )}
                 </Animated.View>
               );
+
+              if (Platform.OS !== 'web') {
+                return (
+                  <NativeStackDragger
+                    key={stack.id}
+                    stack={stack}
+                    onDragEnd={(id, x, y) => {
+                      setStacks(prev => prev.map(s => s.id === id ? { ...s, x, y } : s));
+                    }}
+                  >
+                    {stackContent}
+                  </NativeStackDragger>
+                );
+              }
+              return stackContent;
             })}
           </View>
         </ScrollView>

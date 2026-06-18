@@ -1,5 +1,4 @@
-import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
-import type { AudioPlayer } from 'expo-audio';
+import { Platform } from 'react-native';
 
 const SOUND_FILES: Record<string, any> = {
   'meow!': require('../assets/sounds/meow.wav'),
@@ -9,32 +8,23 @@ const SOUND_FILES: Record<string, any> = {
   menu:    require('../assets/sounds/menu.wav'),
 };
 
-let currentPlayer: AudioPlayer | null = null;
+export const SOUND_NAMES = Object.keys(SOUND_FILES);
 
+// Web uses the browser Audio API; native sound is not yet implemented
 export async function playSound(name: string): Promise<void> {
+  if (Platform.OS !== 'web') return;
+
   const source = SOUND_FILES[name];
   if (!source) return;
 
   try {
-    if (currentPlayer) {
-      currentPlayer.remove();
-      currentPlayer = null;
-    }
-
-    await setAudioModeAsync({ playsInSilentModeIOS: true });
-    const player = createAudioPlayer(source);
-    currentPlayer = player;
-    player.play();
+    const audio = new window.Audio(source);
+    audio.play().catch(() => {});
   } catch (e) {
     console.warn('playSound error:', e);
   }
 }
 
 export async function stopAllSounds(): Promise<void> {
-  if (currentPlayer) {
-    currentPlayer.remove();
-    currentPlayer = null;
-  }
+  // no-op on native; web sounds are fire-and-forget
 }
-
-export const SOUND_NAMES = Object.keys(SOUND_FILES);

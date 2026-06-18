@@ -7,7 +7,8 @@
     "internal": {
       "android": {
         "buildType": "apk",
-        "distribution": "internal"
+        "distribution": "internal",
+        "gradleCommand": ":app:assembleRelease"
       }
     },
     "production": {

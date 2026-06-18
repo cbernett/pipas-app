@@ -1,4 +1,5 @@
-import { Audio } from 'expo-av';
+import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
+import type { AudioPlayer } from 'expo-audio';
 
 const SOUND_FILES: Record<string, any> = {
   'meow!': require('../assets/sounds/meow.wav'),
@@ -8,40 +9,31 @@ const SOUND_FILES: Record<string, any> = {
   menu:    require('../assets/sounds/menu.wav'),
 };
 
-let currentSound: Audio.Sound | null = null;
+let currentPlayer: AudioPlayer | null = null;
 
 export async function playSound(name: string): Promise<void> {
   const source = SOUND_FILES[name];
   if (!source) return;
 
   try {
-    // Stop any currently playing sound
-    if (currentSound) {
-      await currentSound.stopAsync().catch(() => {});
-      await currentSound.unloadAsync().catch(() => {});
-      currentSound = null;
+    if (currentPlayer) {
+      currentPlayer.remove();
+      currentPlayer = null;
     }
 
-    await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
-    const { sound } = await Audio.Sound.createAsync(source, { shouldPlay: true });
-    currentSound = sound;
-
-    sound.setOnPlaybackStatusUpdate((status) => {
-      if (status.isLoaded && status.didJustFinish) {
-        sound.unloadAsync().catch(() => {});
-        if (currentSound === sound) currentSound = null;
-      }
-    });
+    await setAudioModeAsync({ playsInSilentModeIOS: true });
+    const player = createAudioPlayer(source);
+    currentPlayer = player;
+    player.play();
   } catch (e) {
     console.warn('playSound error:', e);
   }
 }
 
 export async function stopAllSounds(): Promise<void> {
-  if (currentSound) {
-    await currentSound.stopAsync().catch(() => {});
-    await currentSound.unloadAsync().catch(() => {});
-    currentSound = null;
+  if (currentPlayer) {
+    currentPlayer.remove();
+    currentPlayer = null;
   }
 }
 

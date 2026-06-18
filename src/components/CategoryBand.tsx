@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { BlockDef, CATEGORY_COLORS, CATEGORY_DARK, BlockCategory } from '../data/blocks';
 import { useApp, WorkspaceBlock } from '../context/AppContext';
 import CodeBlock from './CodeBlock';
@@ -13,7 +13,7 @@ interface Props {
 
 const DRAG_MIN = 8;
 
-function LibraryBlockItem({ block, addStack }: { block: BlockDef; addStack: (b: WorkspaceBlock, x?: number, y?: number) => void }) {
+function LibraryBlockItemWeb({ block, addStack }: { block: BlockDef; addStack: (b: WorkspaceBlock, x?: number, y?: number) => void }) {
   const ref = useRef<View>(null);
 
   const wsBlock: WorkspaceBlock = {
@@ -39,7 +39,6 @@ function LibraryBlockItem({ block, addStack }: { block: BlockDef; addStack: (b: 
         const d = Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY);
         if (!hasMoved && d > DRAG_MIN) {
           hasMoved = true;
-          // Tell workspace a library drag is active
           (window as any).__libDrag = { active: true, hasMoved: true, block: wsBlock };
           ghost = document.createElement('div');
           ghost.style.cssText = [
@@ -71,10 +70,8 @@ function LibraryBlockItem({ block, addStack }: { block: BlockDef; addStack: (b: 
         if (ghost) { document.body.removeChild(ghost); ghost = null; }
 
         if (!hasMoved) {
-          // Tap — workspace's onUp won't fire for this (no __libDrag set), add directly
           addStack(wsBlock, 40 + Math.random() * 80, 40 + Math.random() * 80);
         }
-        // If hasMoved: workspace's onUp reads __libDrag and handles the drop + clears it
       };
 
       document.addEventListener('pointermove', onMove);
@@ -88,11 +85,35 @@ function LibraryBlockItem({ block, addStack }: { block: BlockDef; addStack: (b: 
   const isBracket = ['ctrl_2', 'ctrl_3', 'ctrl_4', 'ctrl_5'].includes(block.id);
 
   return (
-    <View ref={ref} style={styles.blockItem}>
+    <View ref={ref} style={[styles.blockItem, { cursor: 'grab' } as any]}>
       <CodeBlock block={wsBlock} preview showBracket={isBracket} isFirst isLast />
     </View>
   );
 }
+
+function LibraryBlockItemNative({ block, addStack }: { block: BlockDef; addStack: (b: WorkspaceBlock, x?: number, y?: number) => void }) {
+  const wsBlock: WorkspaceBlock = {
+    id: block.id,
+    defId: block.id,
+    label: block.label,
+    category: block.category,
+    color: CATEGORY_COLORS[block.category as BlockCategory],
+  };
+
+  const isBracket = ['ctrl_2', 'ctrl_3', 'ctrl_4', 'ctrl_5'].includes(block.id);
+
+  return (
+    <TouchableOpacity
+      style={styles.blockItem}
+      activeOpacity={0.7}
+      onPress={() => addStack(wsBlock, 40 + Math.random() * 120, 40 + Math.random() * 120)}
+    >
+      <CodeBlock block={wsBlock} preview showBracket={isBracket} isFirst isLast />
+    </TouchableOpacity>
+  );
+}
+
+const LibraryBlockItem = Platform.OS === 'web' ? LibraryBlockItemWeb : LibraryBlockItemNative;
 
 export default function CategoryBand({ category, blocks, isExpanded, onToggle }: Props) {
   const { addStack } = useApp();
@@ -147,6 +168,5 @@ const styles = StyleSheet.create({
   },
   blockItem: {
     alignSelf: 'flex-start',
-    cursor: 'grab',
-  } as any,
+  },
 });

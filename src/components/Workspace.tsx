@@ -1,9 +1,11 @@
 import React, { useRef, useState, useCallback, useEffect, useLayoutEffect } from 'react';
 import { View, ScrollView, Text, StyleSheet, Animated, TouchableOpacity, useWindowDimensions, Platform, PanResponder } from 'react-native';
 import { flushSync } from 'react-dom';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import ReAnimated, { useSharedValue, useAnimatedStyle, runOnJS } from 'react-native-reanimated';
 import { useApp, WorkspaceBlock, BlockStack } from '../context/AppContext';
 
-// Native-only draggable wrapper for a block stack (Android)
+// Native-only draggable wrapper — uses RNGH + Reanimated (new-arch safe)
 function NativeStackDragger({
   stack,
   onDragStart,
@@ -17,60 +19,64 @@ function NativeStackDragger({
   onTap: () => void;
   children: React.ReactNode;
 }) {
-  const pan = useRef(new Animated.ValueXY({ x: stack.x, y: stack.y })).current;
-  const moved = useRef(false);
-  const stackIdRef   = useRef(stack.id);
-  const onDragStartRef = useRef(onDragStart);
-  const onDragEndRef   = useRef(onDragEnd);
-  const onTapRef       = useRef(onTap);
-  // Keep refs current every render so the frozen PanResponder always calls latest callbacks
-  stackIdRef.current   = stack.id;
-  onDragStartRef.current = onDragStart;
-  onDragEndRef.current   = onDragEnd;
-  onTapRef.current       = onTap;
+  const x      = useSharedValue(stack.x);
+  const y      = useSharedValue(stack.y);
+  const startX = useSharedValue(stack.x);
+  const startY = useSharedValue(stack.y);
 
+  // Ref proxies so gesture callbacks always call the latest JS functions
+  const stackIdRef      = useRef(stack.id);
+  const onDragStartRef  = useRef(onDragStart);
+  const onDragEndRef    = useRef(onDragEnd);
+  const onTapRef        = useRef(onTap);
+  stackIdRef.current    = stack.id;
+  onDragStartRef.current  = onDragStart;
+  onDragEndRef.current    = onDragEnd;
+  onTapRef.current        = onTap;
+
+  // Sync position when a new stack is created (addStack sets initial coords)
   useEffect(() => {
-    pan.setValue({ x: stack.x, y: stack.y });
+    x.value = stack.x;
+    y.value = stack.y;
   }, [stack.id]);
 
-  const responder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        moved.current = false;
-        pan.extractOffset();
-      },
-      onPanResponderMove: (_, g) => {
-        if (Math.abs(g.dx) > 5 || Math.abs(g.dy) > 5) {
-          if (!moved.current) {
-            moved.current = true;
-            onDragStartRef.current();
-          }
-          pan.x.setValue(g.dx);
-          pan.y.setValue(g.dy);
-        }
-      },
-      onPanResponderRelease: () => {
-        pan.flattenOffset();
-        if (!moved.current) {
-          onTapRef.current();
-        } else {
-          onDragEndRef.current(stackIdRef.current, (pan.x as any)._value, (pan.y as any)._value);
-        }
-      },
-      onPanResponderTerminate: () => {
-        pan.flattenOffset();
-      },
+  const panGesture = Gesture.Pan()
+    .onStart(() => {
+      startX.value = x.value;
+      startY.value = y.value;
+      runOnJS(() => onDragStartRef.current())();
     })
-  ).current;
+    .onUpdate((e) => {
+      x.value = startX.value + e.translationX;
+      y.value = startY.value + e.translationY;
+    })
+    .onEnd(() => {
+      runOnJS((id: string, fx: number, fy: number) => onDragEndRef.current(id, fx, fy))(
+        stackIdRef.current, x.value, y.value
+      );
+    });
+
+  const tapGesture = Gesture.Tap()
+    .onEnd(() => {
+      runOnJS(() => onTapRef.current())();
+    });
+
+  // Tap has priority; if finger moves > threshold RNGH switches to pan
+  const gesture = Gesture.Exclusive(tapGesture, panGesture);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    position: 'absolute' as const,
+    left: x.value,
+    top:  y.value,
+    zIndex: 1,
+  }));
 
   return (
-    <Animated.View
-      style={[styles.stackPos, { left: pan.x, top: pan.y, zIndex: 1 }]}
-      {...responder.panHandlers}
-    >
-      {children}
-    </Animated.View>
+    <GestureDetector gesture={gesture}>
+      <ReAnimated.View style={animatedStyle}>
+        {children}
+      </ReAnimated.View>
+    </GestureDetector>
   );
 }
 import CodeBlock, { TAB_H, TAB_OFFSET } from './CodeBlock';
@@ -97,7 +103,6 @@ export default function Workspace() {
   const displayStacks = stacks;
 
   // ── Drag/snap state ─────────────────────────────────────────────────────
-  const [nativeDragging,  setNativeDragging]  = useState(false); // Android only
   const [draggingId,      setDraggingId]      = useState<string | null>(null);
   const [snapTargetId,    setSnapTargetId]    = useState<string | null>(null);
   const [bracketHoverId,  setBracketHoverId]  = useState<string | null>(null);
@@ -655,7 +660,7 @@ export default function Workspace() {
         horizontal
         style={{ flex: 1 }}
         contentContainerStyle={{ width: CANVAS_W }}
-        scrollEnabled={!draggingId && !nativeDragging}
+        scrollEnabled={!draggingId}
         scrollEventThrottle={16}
         showsHorizontalScrollIndicator={false}
         showsVerticalScrollIndicator={false}
@@ -667,7 +672,7 @@ export default function Workspace() {
       >
         <ScrollView
           contentContainerStyle={{ height: CANVAS_H }}
-          scrollEnabled={!draggingId && !nativeDragging}
+          scrollEnabled={!draggingId}
           scrollEventThrottle={16}
           showsHorizontalScrollIndicator={false}
           bounces={false}
@@ -750,9 +755,8 @@ export default function Workspace() {
                   <NativeStackDragger
                     key={stack.id}
                     stack={stack}
-                    onDragStart={() => setNativeDragging(true)}
+                    onDragStart={() => {}}
                     onDragEnd={(id, x, y) => {
-                      setNativeDragging(false);
                       const stks = localStacksRef.current;
                       const dragStk = stks.find(s => s.id === id);
                       if (!dragStk) return;

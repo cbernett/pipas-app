@@ -6,32 +6,52 @@ import { useApp, WorkspaceBlock, BlockStack } from '../context/AppContext';
 // Native-only draggable wrapper for a block stack (Android)
 function NativeStackDragger({
   stack,
+  onDragStart,
   onDragEnd,
+  onTap,
   children,
 }: {
   stack: BlockStack;
+  onDragStart: () => void;
   onDragEnd: (id: string, x: number, y: number) => void;
+  onTap: () => void;
   children: React.ReactNode;
 }) {
   const pan = useRef(new Animated.ValueXY({ x: stack.x, y: stack.y })).current;
+  const moved = useRef(false);
 
-  // Sync if stack position changes externally (e.g. addStack)
   useEffect(() => {
     pan.setValue({ x: stack.x, y: stack.y });
-  }, [stack.id]); // only re-sync on stack creation, not every x/y update
+  }, [stack.id]);
 
   const responder = useRef(
     PanResponder.create({
-      // Don't claim tap — only claim once a drag is detected
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 6 || Math.abs(g.dy) > 6,
+      // Claim the touch immediately so ScrollView doesn't intercept first
+      onStartShouldSetPanResponder: () => true,
       onPanResponderGrant: () => {
+        moved.current = false;
         pan.extractOffset();
       },
-      onPanResponderMove: Animated.event([null, { dx: pan.x, dy: pan.y }], { useNativeDriver: false }),
+      onPanResponderMove: (_, g) => {
+        if (Math.abs(g.dx) > 5 || Math.abs(g.dy) > 5) {
+          if (!moved.current) {
+            moved.current = true;
+            onDragStart();
+          }
+          pan.x.setValue(g.dx);
+          pan.y.setValue(g.dy);
+        }
+      },
       onPanResponderRelease: () => {
         pan.flattenOffset();
-        onDragEnd(stack.id, (pan.x as any)._value, (pan.y as any)._value);
+        if (!moved.current) {
+          onTap();
+        } else {
+          onDragEnd(stack.id, (pan.x as any)._value, (pan.y as any)._value);
+        }
+      },
+      onPanResponderTerminate: () => {
+        pan.flattenOffset();
       },
     })
   ).current;
@@ -69,6 +89,7 @@ export default function Workspace() {
   const displayStacks = stacks;
 
   // ── Drag/snap state ─────────────────────────────────────────────────────
+  const [nativeDragging,  setNativeDragging]  = useState(false); // Android only
   const [draggingId,      setDraggingId]      = useState<string | null>(null);
   const [snapTargetId,    setSnapTargetId]    = useState<string | null>(null);
   const [bracketHoverId,  setBracketHoverId]  = useState<string | null>(null);
@@ -626,7 +647,7 @@ export default function Workspace() {
         horizontal
         style={{ flex: 1 }}
         contentContainerStyle={{ width: CANVAS_W }}
-        scrollEnabled={!draggingId}
+        scrollEnabled={!draggingId && !nativeDragging}
         scrollEventThrottle={16}
         showsHorizontalScrollIndicator={false}
         showsVerticalScrollIndicator={false}
@@ -638,7 +659,7 @@ export default function Workspace() {
       >
         <ScrollView
           contentContainerStyle={{ height: CANVAS_H }}
-          scrollEnabled={!draggingId}
+          scrollEnabled={!draggingId && !nativeDragging}
           scrollEventThrottle={16}
           showsHorizontalScrollIndicator={false}
           bounces={false}
@@ -721,7 +742,9 @@ export default function Workspace() {
                   <NativeStackDragger
                     key={stack.id}
                     stack={stack}
+                    onDragStart={() => setNativeDragging(true)}
                     onDragEnd={(id, x, y) => {
+                      setNativeDragging(false);
                       const stks = localStacksRef.current;
                       const dragStk = stks.find(s => s.id === id);
                       if (!dragStk) return;
@@ -742,6 +765,15 @@ export default function Workspace() {
                       }
                       localStacksRef.current = next;
                       setStacks(next);
+                    }}
+                    onTap={() => {
+                      const firstBlock = stack.blocks[0];
+                      if (!firstBlock) return;
+                      if (isTouchEvent(firstBlock)) {
+                        handleEventTap(firstBlock, stack.blocks, 0);
+                      } else {
+                        handleBlockTap(firstBlock);
+                      }
                     }}
                   >
                     {stackContent}

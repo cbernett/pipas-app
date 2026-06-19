@@ -15,7 +15,7 @@ function NativeStackDragger({
 }: {
   stack: BlockStack;
   onDragEnd: (id: string, x: number, y: number, touchedY: number, screenY: number) => void;
-  onDragMove: (screenY: number) => void;
+  onDragMove: (canvasX: number, canvasY: number, screenY: number) => void;
   onTap: (touchedY: number) => void;
   children: React.ReactNode;
 }) {
@@ -50,7 +50,9 @@ function NativeStackDragger({
       didMove.current = true;
       pan.x.setValue(g.dx);
       pan.y.setValue(g.dy);
-      onDragMoveRef.current(e.nativeEvent.pageY);
+      const canvasX = (pan.x as any)._offset + g.dx;
+      const canvasY = (pan.y as any)._offset + g.dy;
+      onDragMoveRef.current(canvasX, canvasY, e.nativeEvent.pageY);
     },
     onPanResponderRelease: (e) => {
       pan.flattenOffset();
@@ -748,13 +750,24 @@ export default function Workspace() {
                   <NativeStackDragger
                     key={stack.id}
                     stack={stack}
-                    onDragMove={(screenY) => {
+                    onDragMove={(canvasX, canvasY, screenY) => {
                       const winH = Dimensions.get('window').height;
                       const trashZone = libraryOpenRef.current ? TRASH_ZONE_OPEN : TRASH_ZONE_CLOSED;
                       setTrashHover(screenY > winH - trashZone);
+                      const tempDrag: BlockStack = { id: stack.id, x: canvasX, y: canvasY, blocks: stack.blocks };
+                      const snap = findSnap(tempDrag, canvasX, canvasY);
+                      setSnapTargetId(snap?.id ?? null);
+                      setSnapPreviewPos(snap ? {
+                        x: localStacksRef.current.find(s => s.id === snap.id)?.x ?? canvasX,
+                        y: snap.y,
+                        insertAt: snap.insertAt,
+                        targetId: snap.id,
+                      } : null);
                     }}
                     onDragEnd={(id, x, y, touchedY, screenY) => {
                       setTrashHover(false);
+                      setSnapTargetId(null);
+                      setSnapPreviewPos(null);
                       const stks = localStacksRef.current;
                       const dragStk = stks.find(s => s.id === id);
                       if (!dragStk) return;

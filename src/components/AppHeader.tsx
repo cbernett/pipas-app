@@ -12,7 +12,7 @@ export default function AppHeader() {
     <View style={styles.container}>
       {Platform.OS !== 'web' && (
         <View style={{ backgroundColor: '#5BC4D1', paddingVertical: 2, alignItems: 'center' }}>
-          <Text style={{ color: '#000', fontSize: 10, fontWeight: '700' }}>BUILD v8 — 18 JUN</Text>
+          <Text style={{ color: '#000', fontSize: 10, fontWeight: '700' }}>BUILD v9 — 19 JUN</Text>
         </View>
       )}
       <View style={[styles.row, { paddingTop: Math.max(insets.top, 10) + 10 }]}>
@@ -83,7 +83,7 @@ const styles = StyleSheet.create({
   },
   tab: {
     paddingHorizontal: 6,
-    paddingBottom: 4,
+    paddingVertical: 4,
     alignItems: 'center',
   },
   tabIcon: {
@@ -91,9 +91,10 @@ const styles = StyleSheet.create({
     height: 18,
   },
   tabUnderline: {
+    position: 'absolute',
+    bottom: 0,
     height: 2,
     borderRadius: 1,
-    marginTop: 8,
     width: 28,
   },
   tabUnderlineActive:   { backgroundColor: '#FFF' },

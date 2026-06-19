@@ -648,7 +648,7 @@ export default function Workspace() {
         horizontal
         style={{ flex: 1 }}
         contentContainerStyle={{ width: CANVAS_W }}
-        scrollEnabled={!draggingId}
+        scrollEnabled={Platform.OS === 'web' ? !draggingId : false}
         scrollEventThrottle={16}
         showsHorizontalScrollIndicator={false}
         showsVerticalScrollIndicator={false}
@@ -660,7 +660,7 @@ export default function Workspace() {
       >
         <ScrollView
           contentContainerStyle={{ height: CANVAS_H }}
-          scrollEnabled={!draggingId}
+          scrollEnabled={Platform.OS === 'web' ? !draggingId : false}
           scrollEventThrottle={16}
           showsHorizontalScrollIndicator={false}
           bounces={false}

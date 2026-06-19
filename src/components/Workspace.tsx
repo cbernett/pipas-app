@@ -23,22 +23,25 @@ function NativeStackDragger({
   onDragMove: (canvasX: number, canvasY: number, screenY: number) => void;
   onTap: (touchedY: number) => void;
   onSplitStart: (stackId: string, touchedY: number) => { startX: number; startY: number } | null;
+  onSplitCancel: (stackId: string) => void;
   splitOverlayX: Animated.Value;
   splitOverlayY: Animated.Value;
   children: React.ReactNode;
 }) {
   const pan = useRef(new Animated.ValueXY({ x: stack.x, y: stack.y })).current;
 
-  const stackIdRef       = useRef(stack.id);
-  const onDragEndRef     = useRef(onDragEnd);
-  const onDragMoveRef    = useRef(onDragMove);
-  const onTapRef         = useRef(onTap);
-  const onSplitStartRef  = useRef(onSplitStart);
-  stackIdRef.current      = stack.id;
-  onDragEndRef.current    = onDragEnd;
-  onDragMoveRef.current   = onDragMove;
-  onTapRef.current        = onTap;
-  onSplitStartRef.current = onSplitStart;
+  const stackIdRef        = useRef(stack.id);
+  const onDragEndRef      = useRef(onDragEnd);
+  const onDragMoveRef     = useRef(onDragMove);
+  const onTapRef          = useRef(onTap);
+  const onSplitStartRef   = useRef(onSplitStart);
+  const onSplitCancelRef  = useRef(onSplitCancel);
+  stackIdRef.current       = stack.id;
+  onDragEndRef.current     = onDragEnd;
+  onDragMoveRef.current    = onDragMove;
+  onTapRef.current         = onTap;
+  onSplitStartRef.current  = onSplitStart;
+  onSplitCancelRef.current = onSplitCancel;
 
   const didMove           = useRef(false);
   const initialTouchY     = useRef(0); // captured pre-movement in onStartShouldSetPanResponder
@@ -50,12 +53,20 @@ function NativeStackDragger({
   }, [stack.id]);
 
   const responder = useRef(PanResponder.create({
-    // Capture initial touch Y before any movement (more accurate than locationY at grant)
+    // Capture initial touch Y at first touch (pre-movement). This fires even when
+    // we return false, giving us the original press location before any drift.
     onStartShouldSetPanResponder: (e) => {
       initialTouchY.current = e.nativeEvent.locationY;
       return false;
     },
-    onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 6 || Math.abs(g.dy) > 6,
+    onMoveShouldSetPanResponder: (e, g) => {
+      // Refine touch Y estimate: subtract accumulated dy from current locationY
+      // so we approximate the original contact point (more reliable on some devices).
+      if (initialTouchY.current === 0) {
+        initialTouchY.current = Math.max(0, e.nativeEvent.locationY - g.dy);
+      }
+      return Math.abs(g.dx) > 6 || Math.abs(g.dy) > 6;
+    },
     onPanResponderGrant: () => {
       didMove.current = false;
       usingSplitOverlay.current = false;
@@ -104,6 +115,11 @@ function NativeStackDragger({
       }
     },
     onPanResponderTerminate: () => {
+      if (usingSplitOverlay.current) {
+        // Gesture stolen mid-split — restore overlay blocks to source stack
+        // so they aren't lost in limbo
+        onSplitCancelRef.current(stackIdRef.current);
+      }
       usingSplitOverlay.current = false;
       pan.flattenOffset();
     },
@@ -308,17 +324,35 @@ export default function Workspace() {
   // ── Block index hit-test within a stack ─────────────────────────────────
   const blockIdxAt = useCallback((stackId: string, relY: number): number => {
     const heights = blockHeightsRef.current[stackId] ?? [];
+    // Use the actual block count so unmeasured blocks get a fallback height (58px).
+    // Without this, touching block 1 in a 2-block stack returns 0 when only
+    // block 0 has been measured yet.
+    const stk = localStacksRef.current.find(s => s.id === stackId);
+    const blockCount = stk?.blocks.length ?? heights.length;
+    const FALLBACK_H = 58;
     let acc = 0;
-    for (let i = 0; i < heights.length; i++) {
-      // Use (height - TAB_H) for ALL blocks so hit zones match visual positions.
-      // Block i's visual top = accumHeight(i) - TAB_H (for i>0). Using height-TAB_H
-      // ensures clicking in block 1's visual area doesn't register as block 0.
-      const h = (heights[i] ?? 58) - TAB_H;
+    for (let i = 0; i < blockCount; i++) {
+      const h = ((heights[i] ?? FALLBACK_H) - TAB_H);
       if (relY < acc + h) return i;
       acc += h;
     }
-    return Math.max(0, heights.length - 1);
+    return Math.max(0, blockCount - 1);
   }, []);
+
+  // ── Native split cancel: restore overlay blocks to source stack on gesture terminate ──
+  const nativeSplitCancel = useCallback((stackId: string) => {
+    const overlayBlocks = nativeSplitOverlayRef.current;
+    nativeSplitOverlayRef.current = null;
+    setNativeSplitOverlay(null);
+    if (!overlayBlocks || overlayBlocks.length === 0) return;
+    // Restore overlay blocks to end of source stack (= original order)
+    const stks = localStacksRef.current;
+    const next = stks.map(s =>
+      s.id === stackId ? { ...s, blocks: [...s.blocks, ...overlayBlocks] } : s
+    );
+    localStacksRef.current = next;
+    setStacks(next);
+  }, [setStacks]);
 
   // ── Native split: immediately split a stack when drag starts on a non-first block ──
   // Called from NativeStackDragger.onPanResponderGrant. Returns the overlay start
@@ -832,6 +866,7 @@ export default function Workspace() {
                     key={stack.id}
                     stack={stack}
                     onSplitStart={nativeSplitStart}
+                    onSplitCancel={nativeSplitCancel}
                     splitOverlayX={nativeSplitOverlayX}
                     splitOverlayY={nativeSplitOverlayY}
                     onDragMove={(canvasX, canvasY, screenY) => {

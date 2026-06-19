@@ -114,7 +114,7 @@ function LibraryBlockItemNative({ block, addStack }: { block: BlockDef; addStack
         const col = nativePlaceCount % 3;
         const row = Math.floor(nativePlaceCount / 3) % 4;
         nativePlaceCount++;
-        addStack(wsBlock, 40 + col * 220, 60 + row * 140);
+        addStack(wsBlock, 20 + col * 120, 60 + row * 130);
       }}
     >
       <CodeBlock block={wsBlock} preview showBracket={isBracket} isFirst isLast />

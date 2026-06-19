@@ -1,5 +1,5 @@
 import React, { useRef, useState, useCallback, useEffect, useLayoutEffect } from 'react';
-import { View, ScrollView, Text, StyleSheet, Animated, TouchableOpacity, useWindowDimensions, Platform, PanResponder } from 'react-native';
+import { View, ScrollView, Text, StyleSheet, Animated, TouchableOpacity, useWindowDimensions, Platform, PanResponder, Dimensions } from 'react-native';
 import { flushSync } from 'react-dom';
 
 import { useApp, WorkspaceBlock, BlockStack } from '../context/AppContext';
@@ -8,15 +8,15 @@ import { useApp, WorkspaceBlock, BlockStack } from '../context/AppContext';
 // (this is the approach that worked: block steals gesture from ScrollView mid-move)
 function NativeStackDragger({
   stack,
-  onDragStart,
   onDragEnd,
+  onDragMove,
   onTap,
   children,
 }: {
   stack: BlockStack;
-  onDragStart: () => void;
-  onDragEnd: (id: string, x: number, y: number) => void;
-  onTap: () => void;
+  onDragEnd: (id: string, x: number, y: number, touchedY: number, screenY: number) => void;
+  onDragMove: (screenY: number) => void;
+  onTap: (touchedY: number) => void;
   children: React.ReactNode;
 }) {
   const pan = useRef(new Animated.ValueXY({ x: stack.x, y: stack.y })).current;
@@ -24,12 +24,15 @@ function NativeStackDragger({
   // Ref proxies so the frozen PanResponder always calls the latest callbacks
   const stackIdRef     = useRef(stack.id);
   const onDragEndRef   = useRef(onDragEnd);
+  const onDragMoveRef  = useRef(onDragMove);
   const onTapRef       = useRef(onTap);
   stackIdRef.current   = stack.id;
   onDragEndRef.current = onDragEnd;
+  onDragMoveRef.current = onDragMove;
   onTapRef.current     = onTap;
 
-  const didMove = useRef(false);
+  const didMove  = useRef(false);
+  const touchedY = useRef(0); // locationY at grant time (relative to stack top)
 
   useEffect(() => {
     pan.setValue({ x: stack.x, y: stack.y });
@@ -38,21 +41,23 @@ function NativeStackDragger({
   const responder = useRef(PanResponder.create({
     onStartShouldSetPanResponder: () => false,
     onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 6 || Math.abs(g.dy) > 6,
-    onPanResponderGrant: () => {
-      didMove.current = false;
+    onPanResponderGrant: (e) => {
+      didMove.current  = false;
+      touchedY.current = e.nativeEvent.locationY;
       pan.extractOffset();
     },
-    onPanResponderMove: (_, g) => {
+    onPanResponderMove: (e, g) => {
       didMove.current = true;
       pan.x.setValue(g.dx);
       pan.y.setValue(g.dy);
+      onDragMoveRef.current(e.nativeEvent.pageY);
     },
-    onPanResponderRelease: () => {
+    onPanResponderRelease: (e) => {
       pan.flattenOffset();
       if (didMove.current) {
-        onDragEndRef.current(stackIdRef.current, (pan.x as any)._value, (pan.y as any)._value);
+        onDragEndRef.current(stackIdRef.current, (pan.x as any)._value, (pan.y as any)._value, touchedY.current, e.nativeEvent.pageY);
       } else {
-        onTapRef.current();
+        onTapRef.current(touchedY.current);
       }
     },
     onPanResponderTerminate: () => { pan.flattenOffset(); },
@@ -743,36 +748,77 @@ export default function Workspace() {
                   <NativeStackDragger
                     key={stack.id}
                     stack={stack}
-                    onDragStart={() => {}}
-                    onDragEnd={(id, x, y) => {
+                    onDragMove={(screenY) => {
+                      const winH = Dimensions.get('window').height;
+                      const trashZone = libraryOpenRef.current ? TRASH_ZONE_OPEN : TRASH_ZONE_CLOSED;
+                      setTrashHover(screenY > winH - trashZone);
+                    }}
+                    onDragEnd={(id, x, y, touchedY, screenY) => {
+                      setTrashHover(false);
                       const stks = localStacksRef.current;
                       const dragStk = stks.find(s => s.id === id);
                       if (!dragStk) return;
-                      const updatedDrag = { ...dragStk, x, y };
-                      const snap = findSnap(updatedDrag, x, y);
+
+                      // Trash zone: delete if released near the library drawer
+                      const winH = Dimensions.get('window').height;
+                      const trashZone = libraryOpenRef.current ? TRASH_ZONE_OPEN : TRASH_ZONE_CLOSED;
+                      if (screenY > winH - trashZone) {
+                        const next = stks.filter((s: BlockStack) => s.id !== id);
+                        localStacksRef.current = next;
+                        setStacks(next);
+                        return;
+                      }
+
+                      // Determine which block was touched
+                      const blockIdx = blockIdxAt(id, touchedY);
+
+                      // Split if not touching the first block
+                      let blocksToMove = dragStk.blocks;
+                      let remainingBlocks: typeof dragStk.blocks | null = null;
+                      if (blockIdx > 0 && dragStk.blocks.length > blockIdx) {
+                        blocksToMove = dragStk.blocks.slice(blockIdx);
+                        remainingBlocks = dragStk.blocks.slice(0, blockIdx);
+                      }
+
+                      // Position of the split portion = y + offset of block at blockIdx
+                      const splitOffsetY = blockIdx > 0 ? accumHeight(id, blockIdx) : 0;
+                      const moveY = y + splitOffsetY;
+
+                      const effectiveDrag: BlockStack = { id, x, y: moveY, blocks: blocksToMove };
+                      const snap = findSnap(effectiveDrag, x, moveY);
+
                       let next: BlockStack[];
                       if (snap) {
-                        next = stks
-                          .filter((s: BlockStack) => s.id !== id)
-                          .map((s: BlockStack) => {
-                            if (s.id !== snap.id) return s;
-                            const merged = [...s.blocks];
-                            merged.splice(snap.insertAt, 0, ...dragStk.blocks);
-                            return { ...s, blocks: merged };
-                          });
+                        const base = remainingBlocks
+                          ? stks.map((s: BlockStack) => s.id === id ? { ...s, blocks: remainingBlocks! } : s)
+                          : stks.filter((s: BlockStack) => s.id !== id);
+                        next = base.map((s: BlockStack) => {
+                          if (s.id !== snap.id) return s;
+                          const merged = [...s.blocks];
+                          merged.splice(snap.insertAt, 0, ...blocksToMove);
+                          return { ...s, blocks: merged };
+                        });
+                      } else if (remainingBlocks) {
+                        // Split without snap: keep top portion in place, new stack for moved blocks
+                        const splitId = `sp_${Date.now()}`;
+                        next = [
+                          ...stks.map((s: BlockStack) => s.id === id ? { ...s, blocks: remainingBlocks! } : s),
+                          { id: splitId, x, y: moveY, blocks: blocksToMove },
+                        ];
                       } else {
                         next = stks.map((s: BlockStack) => s.id === id ? { ...s, x, y } : s);
                       }
                       localStacksRef.current = next;
                       setStacks(next);
                     }}
-                    onTap={() => {
-                      const firstBlock = stack.blocks[0];
-                      if (!firstBlock) return;
-                      if (isTouchEvent(firstBlock)) {
-                        handleEventTap(firstBlock, stack.blocks, 0);
+                    onTap={(touchedY) => {
+                      const blockIdx = blockIdxAt(stack.id, touchedY);
+                      const tappedBlock = stack.blocks[blockIdx] ?? stack.blocks[0];
+                      if (!tappedBlock) return;
+                      if (isTouchEvent(tappedBlock)) {
+                        handleEventTap(tappedBlock, stack.blocks, blockIdx);
                       } else {
-                        handleBlockTap(firstBlock);
+                        handleBlockTap(tappedBlock);
                       }
                     }}
                   >

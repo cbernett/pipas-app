@@ -372,16 +372,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => { execRef.current = executeScript; }, [executeScript]);
 
-  const handleTouchPad = useCallback((pad: number) => {
+  // Debounce touch pads: the board sends bytes for every pad UP TO the touched pad
+  // (e.g. touching pad 3 emits pad 1, pad 2, pad 3 in quick succession). We collect
+  // all pads that arrive within 80 ms and fire only the highest one.
+  const pendingPadRef  = useRef<number | null>(null);
+  const padTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const firePad = useCallback((pad: number) => {
     const activStacks = stacksRef.current;
     const script = findTouchStack(activStacks, pad) ?? null;
     if (!script) return;
 
     if (isExecutingRef.current) {
-      // "toque até parar" → play to end, ignore re-triggers
       const hasPlayUntilEnd = flattenBlocks(script).some(b => b.defId === 'som_4');
       if (hasPlayUntilEnd) return;
-      // All other scripts → stop and restart
       stopRun();
       setTimeout(() => {
         runAbortRef.current = false;
@@ -393,6 +397,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     runAbortRef.current = false;
     execRef.current(script).catch(() => { isExecutingRef.current = false; });
   }, [stopRun]);
+
+  const handleTouchPad = useCallback((pad: number) => {
+    // Accumulate: keep the highest pad received in this burst
+    pendingPadRef.current = Math.max(pendingPadRef.current ?? 0, pad);
+    if (padTimerRef.current) clearTimeout(padTimerRef.current);
+    padTimerRef.current = setTimeout(() => {
+      const best = pendingPadRef.current;
+      pendingPadRef.current = null;
+      padTimerRef.current  = null;
+      if (best !== null) firePad(best);
+    }, 80);
+  }, [firePad]);
 
   useEffect(() => board.onTouch(handleTouchPad), [handleTouchPad]);
 

@@ -11,7 +11,7 @@
     },
     "android": {
       "package": "com.pipaslabs.app",
-      "versionCode": 11,
+      "versionCode": 12,
       "permissions": [
         "android.permission.USB_PERMISSION"
       ],

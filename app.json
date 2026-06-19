@@ -11,12 +11,12 @@
     },
     "android": {
       "package": "com.pipaslabs.app",
-      "versionCode": 10,
+      "versionCode": 11,
       "permissions": [
         "android.permission.USB_PERMISSION"
       ],
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#3EECD8",
         "foregroundImage": "./assets/pipas_icon.png"
       },
       "predictiveBackGestureEnabled": false

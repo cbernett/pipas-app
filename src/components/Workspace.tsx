@@ -4,65 +4,109 @@ import { flushSync } from 'react-dom';
 
 import { useApp, WorkspaceBlock, BlockStack } from '../context/AppContext';
 
-// Native-only draggable wrapper — PanResponder with onMoveShouldSetPanResponder
-// (this is the approach that worked: block steals gesture from ScrollView mid-move)
+// Native-only draggable wrapper — PanResponder with onMoveShouldSetPanResponder.
+// Supports split-overlay mode: when the user grabs a non-first block, onSplitStart
+// splits the stack immediately and returns the overlay's start position; subsequent
+// move events drive splitOverlayX/Y instead of this stack's own pan.
 function NativeStackDragger({
   stack,
   onDragEnd,
   onDragMove,
   onTap,
+  onSplitStart,
+  splitOverlayX,
+  splitOverlayY,
   children,
 }: {
   stack: BlockStack;
   onDragEnd: (id: string, x: number, y: number, touchedY: number, screenY: number) => void;
   onDragMove: (canvasX: number, canvasY: number, screenY: number) => void;
   onTap: (touchedY: number) => void;
+  onSplitStart: (stackId: string, touchedY: number) => { startX: number; startY: number } | null;
+  splitOverlayX: Animated.Value;
+  splitOverlayY: Animated.Value;
   children: React.ReactNode;
 }) {
   const pan = useRef(new Animated.ValueXY({ x: stack.x, y: stack.y })).current;
 
-  // Ref proxies so the frozen PanResponder always calls the latest callbacks
-  const stackIdRef     = useRef(stack.id);
-  const onDragEndRef   = useRef(onDragEnd);
-  const onDragMoveRef  = useRef(onDragMove);
-  const onTapRef       = useRef(onTap);
-  stackIdRef.current   = stack.id;
-  onDragEndRef.current = onDragEnd;
-  onDragMoveRef.current = onDragMove;
-  onTapRef.current     = onTap;
+  const stackIdRef       = useRef(stack.id);
+  const onDragEndRef     = useRef(onDragEnd);
+  const onDragMoveRef    = useRef(onDragMove);
+  const onTapRef         = useRef(onTap);
+  const onSplitStartRef  = useRef(onSplitStart);
+  stackIdRef.current      = stack.id;
+  onDragEndRef.current    = onDragEnd;
+  onDragMoveRef.current   = onDragMove;
+  onTapRef.current        = onTap;
+  onSplitStartRef.current = onSplitStart;
 
-  const didMove  = useRef(false);
-  const touchedY = useRef(0); // locationY at grant time (relative to stack top)
+  const didMove           = useRef(false);
+  const initialTouchY     = useRef(0); // captured pre-movement in onStartShouldSetPanResponder
+  const usingSplitOverlay = useRef(false);
+  const splitStartPos     = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     pan.setValue({ x: stack.x, y: stack.y });
   }, [stack.id]);
 
   const responder = useRef(PanResponder.create({
-    onStartShouldSetPanResponder: () => false,
+    // Capture initial touch Y before any movement (more accurate than locationY at grant)
+    onStartShouldSetPanResponder: (e) => {
+      initialTouchY.current = e.nativeEvent.locationY;
+      return false;
+    },
     onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 6 || Math.abs(g.dy) > 6,
-    onPanResponderGrant: (e) => {
-      didMove.current  = false;
-      touchedY.current = e.nativeEvent.locationY;
-      pan.extractOffset();
+    onPanResponderGrant: () => {
+      didMove.current = false;
+      usingSplitOverlay.current = false;
+      splitStartPos.current = null;
+
+      // Try to split the stack at the touched block index
+      const split = onSplitStartRef.current(stackIdRef.current, initialTouchY.current);
+      if (split) {
+        // Split happened — drive the overlay; our own stack (top portion) stays put
+        usingSplitOverlay.current = true;
+        splitStartPos.current = split;
+      } else {
+        pan.extractOffset();
+      }
     },
     onPanResponderMove: (e, g) => {
       didMove.current = true;
-      pan.x.setValue(g.dx);
-      pan.y.setValue(g.dy);
-      const canvasX = (pan.x as any)._offset + g.dx;
-      const canvasY = (pan.y as any)._offset + g.dy;
-      onDragMoveRef.current(canvasX, canvasY, e.nativeEvent.pageY);
-    },
-    onPanResponderRelease: (e) => {
-      pan.flattenOffset();
-      if (didMove.current) {
-        onDragEndRef.current(stackIdRef.current, (pan.x as any)._value, (pan.y as any)._value, touchedY.current, e.nativeEvent.pageY);
+      if (usingSplitOverlay.current && splitStartPos.current) {
+        const nx = splitStartPos.current.x + g.dx;
+        const ny = splitStartPos.current.y + g.dy;
+        splitOverlayX.setValue(nx);
+        splitOverlayY.setValue(ny);
+        onDragMoveRef.current(nx, ny, e.nativeEvent.pageY);
       } else {
-        onTapRef.current(touchedY.current);
+        pan.x.setValue(g.dx);
+        pan.y.setValue(g.dy);
+        const canvasX = (pan.x as any)._offset + g.dx;
+        const canvasY = (pan.y as any)._offset + g.dy;
+        onDragMoveRef.current(canvasX, canvasY, e.nativeEvent.pageY);
       }
     },
-    onPanResponderTerminate: () => { pan.flattenOffset(); },
+    onPanResponderRelease: (e, g) => {
+      if (usingSplitOverlay.current && splitStartPos.current) {
+        const nx = splitStartPos.current.x + g.dx;
+        const ny = splitStartPos.current.y + g.dy;
+        usingSplitOverlay.current = false;
+        // '__overlay__' signals Workspace to finalize the split stack position
+        onDragEndRef.current('__overlay__', nx, ny, 0, e.nativeEvent.pageY);
+      } else {
+        pan.flattenOffset();
+        if (didMove.current) {
+          onDragEndRef.current(stackIdRef.current, (pan.x as any)._value, (pan.y as any)._value, initialTouchY.current, e.nativeEvent.pageY);
+        } else {
+          onTapRef.current(initialTouchY.current);
+        }
+      }
+    },
+    onPanResponderTerminate: () => {
+      usingSplitOverlay.current = false;
+      pan.flattenOffset();
+    },
   })).current;
 
   return (
@@ -108,6 +152,14 @@ export default function Workspace() {
   const [libDragBlock, setLibDragBlock]   = useState<WorkspaceBlock | null>(null);
   const dragAnimX = useRef(new Animated.Value(0)).current;
   const dragAnimY = useRef(new Animated.Value(0)).current;
+
+  // ── Native split overlay (Android only) ────────────────────────────────
+  // When the user grabs a non-first block, the stack splits immediately and the
+  // lower portion is rendered as a floating overlay driven by these values.
+  const nativeSplitOverlayX      = useRef(new Animated.Value(0)).current;
+  const nativeSplitOverlayY      = useRef(new Animated.Value(0)).current;
+  const [nativeSplitOverlay, setNativeSplitOverlay] = useState<WorkspaceBlock[] | null>(null);
+  const nativeSplitOverlayRef    = useRef<WorkspaceBlock[] | null>(null);
 
   // ── Refs (sync, no re-render needed) ───────────────────────────────────
   const localStacksRef  = useRef<BlockStack[]>(displayStacks);
@@ -267,6 +319,35 @@ export default function Workspace() {
     }
     return Math.max(0, heights.length - 1);
   }, []);
+
+  // ── Native split: immediately split a stack when drag starts on a non-first block ──
+  // Called from NativeStackDragger.onPanResponderGrant. Returns the overlay start
+  // position if a split happened, or null if the whole stack should be dragged.
+  const nativeSplitStart = useCallback((stackId: string, touchedYVal: number): { startX: number; startY: number } | null => {
+    const stk = localStacksRef.current.find(s => s.id === stackId);
+    if (!stk || stk.blocks.length <= 1) return null;
+    const blockIdx = blockIdxAt(stackId, touchedYVal);
+    if (blockIdx === 0) return null;
+
+    const splitY = stk.y + accumHeight(stackId, blockIdx);
+    const splitBlocks = stk.blocks.slice(blockIdx);
+    const topBlocks   = stk.blocks.slice(0, blockIdx);
+
+    // Update the source stack to keep only the top portion
+    const next = localStacksRef.current.map(s =>
+      s.id === stackId ? { ...s, blocks: topBlocks } : s
+    );
+    localStacksRef.current = next;
+    setStacks(next);
+
+    // Set up overlay so it's ready for the dragger to position it
+    nativeSplitOverlayX.setValue(stk.x);
+    nativeSplitOverlayY.setValue(splitY);
+    nativeSplitOverlayRef.current = splitBlocks;
+    setNativeSplitOverlay(splitBlocks);
+
+    return { startX: stk.x, startY: splitY };
+  }, [blockIdxAt, accumHeight, setStacks, nativeSplitOverlayX, nativeSplitOverlayY]);
 
   // ── Stack hit test ───────────────────────────────────────────────────────
   const stackAt = useCallback((cx: number, cy: number): { stack: BlockStack; relY: number } | null => {
@@ -750,6 +831,9 @@ export default function Workspace() {
                   <NativeStackDragger
                     key={stack.id}
                     stack={stack}
+                    onSplitStart={nativeSplitStart}
+                    splitOverlayX={nativeSplitOverlayX}
+                    splitOverlayY={nativeSplitOverlayY}
                     onDragMove={(canvasX, canvasY, screenY) => {
                       const winH = Dimensions.get('window').height;
                       const trashZone = libraryOpenRef.current ? TRASH_ZONE_OPEN : TRASH_ZONE_CLOSED;
@@ -764,60 +848,65 @@ export default function Workspace() {
                         targetId: snap.id,
                       } : null);
                     }}
-                    onDragEnd={(id, x, y, touchedY, screenY) => {
+                    onDragEnd={(id, x, y, _touchedY, screenY) => {
                       setTrashHover(false);
                       setSnapTargetId(null);
                       setSnapPreviewPos(null);
+
+                      const winH = Dimensions.get('window').height;
+                      const trashZone = libraryOpenRef.current ? TRASH_ZONE_OPEN : TRASH_ZONE_CLOSED;
+                      const inTrash = screenY > winH - trashZone;
+
+                      // ── Overlay drop: the split lower portion is being placed ──
+                      if (id === '__overlay__') {
+                        const overlayBlocks = nativeSplitOverlayRef.current;
+                        nativeSplitOverlayRef.current = null;
+                        setNativeSplitOverlay(null);
+                        if (!overlayBlocks || overlayBlocks.length === 0) return;
+                        if (inTrash) return; // deleted — top portion already remains
+                        const stks = localStacksRef.current;
+                        const tempDrag: BlockStack = { id: '__overlay__', x, y, blocks: overlayBlocks };
+                        const snap = findSnap(tempDrag, x, y);
+                        let next: BlockStack[];
+                        if (snap) {
+                          next = stks.map((s: BlockStack) => {
+                            if (s.id !== snap.id) return s;
+                            const merged = [...s.blocks];
+                            merged.splice(snap.insertAt, 0, ...overlayBlocks);
+                            return { ...s, blocks: merged };
+                          });
+                        } else {
+                          const newId = `sp_${Date.now()}`;
+                          next = [...stks, { id: newId, x, y, blocks: overlayBlocks }];
+                        }
+                        localStacksRef.current = next;
+                        setStacks(next);
+                        return;
+                      }
+
+                      // ── Regular whole-stack drag ──
                       const stks = localStacksRef.current;
                       const dragStk = stks.find(s => s.id === id);
                       if (!dragStk) return;
 
-                      // Trash zone: delete if released near the library drawer
-                      const winH = Dimensions.get('window').height;
-                      const trashZone = libraryOpenRef.current ? TRASH_ZONE_OPEN : TRASH_ZONE_CLOSED;
-                      if (screenY > winH - trashZone) {
+                      if (inTrash) {
                         const next = stks.filter((s: BlockStack) => s.id !== id);
                         localStacksRef.current = next;
                         setStacks(next);
                         return;
                       }
 
-                      // Determine which block was touched
-                      const blockIdx = blockIdxAt(id, touchedY);
-
-                      // Split if not touching the first block
-                      let blocksToMove = dragStk.blocks;
-                      let remainingBlocks: typeof dragStk.blocks | null = null;
-                      if (blockIdx > 0 && dragStk.blocks.length > blockIdx) {
-                        blocksToMove = dragStk.blocks.slice(blockIdx);
-                        remainingBlocks = dragStk.blocks.slice(0, blockIdx);
-                      }
-
-                      // Position of the split portion = y + offset of block at blockIdx
-                      const splitOffsetY = blockIdx > 0 ? accumHeight(id, blockIdx) : 0;
-                      const moveY = y + splitOffsetY;
-
-                      const effectiveDrag: BlockStack = { id, x, y: moveY, blocks: blocksToMove };
-                      const snap = findSnap(effectiveDrag, x, moveY);
-
+                      const snap = findSnap(dragStk, x, y);
                       let next: BlockStack[];
                       if (snap) {
-                        const base = remainingBlocks
-                          ? stks.map((s: BlockStack) => s.id === id ? { ...s, blocks: remainingBlocks! } : s)
-                          : stks.filter((s: BlockStack) => s.id !== id);
-                        next = base.map((s: BlockStack) => {
-                          if (s.id !== snap.id) return s;
-                          const merged = [...s.blocks];
-                          merged.splice(snap.insertAt, 0, ...blocksToMove);
-                          return { ...s, blocks: merged };
-                        });
-                      } else if (remainingBlocks) {
-                        // Split without snap: keep top portion in place, new stack for moved blocks
-                        const splitId = `sp_${Date.now()}`;
-                        next = [
-                          ...stks.map((s: BlockStack) => s.id === id ? { ...s, blocks: remainingBlocks! } : s),
-                          { id: splitId, x, y: moveY, blocks: blocksToMove },
-                        ];
+                        next = stks
+                          .filter((s: BlockStack) => s.id !== id)
+                          .map((s: BlockStack) => {
+                            if (s.id !== snap.id) return s;
+                            const merged = [...s.blocks];
+                            merged.splice(snap.insertAt, 0, ...dragStk.blocks);
+                            return { ...s, blocks: merged };
+                          });
                       } else {
                         next = stks.map((s: BlockStack) => s.id === id ? { ...s, x, y } : s);
                       }
@@ -841,6 +930,23 @@ export default function Workspace() {
               }
               return stackContent;
             })}
+
+            {/* Native split overlay — floats above everything while a mid-stack block is being dragged */}
+            {Platform.OS !== 'web' && nativeSplitOverlay && (
+              <Animated.View
+                pointerEvents="none"
+                style={[styles.stackPos, { left: nativeSplitOverlayX, top: nativeSplitOverlayY, zIndex: 200, opacity: 0.92 }]}
+              >
+                {nativeSplitOverlay.map((block, bi) => (
+                  <View
+                    key={block.id}
+                    style={{ marginTop: bi === 0 ? 0 : -TAB_H, zIndex: nativeSplitOverlay.length - bi }}
+                  >
+                    <CodeBlock block={block} isFirst={bi === 0} isLast={bi === nativeSplitOverlay.length - 1} isDragging />
+                  </View>
+                ))}
+              </Animated.View>
+            )}
           </View>
         </ScrollView>
       </ScrollView>

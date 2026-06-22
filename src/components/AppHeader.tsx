@@ -12,7 +12,7 @@ export default function AppHeader() {
     <View style={styles.container}>
       {Platform.OS !== 'web' && (
         <View style={{ backgroundColor: '#5BC4D1', paddingVertical: 2, alignItems: 'center' }}>
-          <Text style={{ color: '#000', fontSize: 10, fontWeight: '700' }}>BUILD v13 — 19 JUN</Text>
+          <Text style={{ color: '#000', fontSize: 10, fontWeight: '700' }}>BUILD v14 — 21 JUN</Text>
         </View>
       )}
       <View style={[styles.row, { paddingTop: Math.max(insets.top, 10) + 10 }]}>
@@ -44,7 +44,7 @@ export default function AppHeader() {
         {/* Center: icon — flex:1 + alignItems center keeps it truly centred */}
         <View style={styles.centerLogo} pointerEvents="none">
           <Image
-            source={require('../../assets/pipas_icon.png')}
+            source={require('../../assets/pipas_header_logo.png')}
             style={styles.icon}
             resizeMode="contain"
           />

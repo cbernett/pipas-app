@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, PanResponder } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { BlockDef, CATEGORY_COLORS, CATEGORY_DARK, BlockCategory } from '../data/blocks';
 import { useApp, WorkspaceBlock } from '../context/AppContext';
 import CodeBlock from './CodeBlock';
@@ -95,7 +95,6 @@ function LibraryBlockItemWeb({ block, addStack }: { block: BlockDef; addStack: (
 }
 
 function LibraryBlockItemNative({ block, addStack }: { block: BlockDef; addStack: (b: WorkspaceBlock, x?: number, y?: number) => void }) {
-  const { setLibraryOpen } = useApp();
   const wsBlock: WorkspaceBlock = {
     id: block.id,
     defId: block.id,
@@ -106,37 +105,19 @@ function LibraryBlockItemNative({ block, addStack }: { block: BlockDef; addStack
 
   const isBracket = ['ctrl_2', 'ctrl_3', 'ctrl_4', 'ctrl_5'].includes(block.id);
 
-  const placeBlock = () => {
-    const col = nativePlaceCount % 3;
-    const row = Math.floor(nativePlaceCount / 3) % 4;
-    nativePlaceCount++;
-    addStack(wsBlock, 20 + col * 120, 60 + row * 130);
-  };
-
-  // PanResponder: drag upward to add block and close library
-  const responder = useRef(PanResponder.create({
-    onStartShouldSetPanResponder: () => false,
-    onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 10,
-    onPanResponderGrant: () => {},
-    onPanResponderMove: () => {},
-    onPanResponderRelease: (_, g) => {
-      // Dragged upward — add block and close drawer so user sees the workspace
-      if (g.dy < -20) {
-        placeBlock();
-        setLibraryOpen(false);
-      }
-    },
-  })).current;
-
   return (
-    <View {...responder.panHandlers} style={styles.blockItem}>
-      <TouchableOpacity
-        activeOpacity={0.7}
-        onPress={placeBlock}
-      >
-        <CodeBlock block={wsBlock} preview showBracket={isBracket} isFirst isLast />
-      </TouchableOpacity>
-    </View>
+    <TouchableOpacity
+      style={styles.blockItem}
+      activeOpacity={0.7}
+      onPress={() => {
+        const col = nativePlaceCount % 3;
+        const row = Math.floor(nativePlaceCount / 3) % 4;
+        nativePlaceCount++;
+        addStack(wsBlock, 20 + col * 120, 60 + row * 130);
+      }}
+    >
+      <CodeBlock block={wsBlock} preview showBracket={isBracket} isFirst isLast />
+    </TouchableOpacity>
   );
 }
 

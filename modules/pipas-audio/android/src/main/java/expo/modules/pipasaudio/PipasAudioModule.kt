@@ -28,6 +28,29 @@ class PipasAudioModule : Module() {
       }
     }
 
+    AsyncFunction("playFile") { path: String, promise: expo.modules.kotlin.Promise ->
+      try {
+        val key = "__file__$path"
+        players[key]?.let { try { it.stop(); it.release() } catch (_: Exception) {} }
+        val player = MediaPlayer()
+        player.setDataSource(path)
+        player.prepare()
+        player.setOnCompletionListener { it.release(); players.remove(key) }
+        players[key] = player
+        player.start()
+        promise.resolve(null)
+      } catch (e: Exception) {
+        promise.reject("PLAY_ERROR", e.message ?: "Erro ao tocar arquivo", e)
+      }
+    }
+
+    AsyncFunction("stopFile") { path: String, promise: expo.modules.kotlin.Promise ->
+      val key = "__file__$path"
+      players[key]?.let { try { it.stop(); it.release() } catch (_: Exception) {} }
+      players.remove(key)
+      promise.resolve(null)
+    }
+
     AsyncFunction("stopAll") { promise: expo.modules.kotlin.Promise ->
       players.values.forEach { try { it.stop(); it.release() } catch (_: Exception) {} }
       players.clear()

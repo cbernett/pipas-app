@@ -11,9 +11,10 @@
     },
     "android": {
       "package": "com.pipaslabs.app",
-      "versionCode": 14,
+      "versionCode": 15,
       "permissions": [
-        "android.permission.USB_PERMISSION"
+        "android.permission.USB_PERMISSION",
+        "android.permission.RECORD_AUDIO"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#3EECD8",

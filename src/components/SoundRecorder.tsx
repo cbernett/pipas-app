@@ -4,6 +4,8 @@ import {
   TextInput, ScrollView, PanResponder,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { PipasRecording } from '../../modules/pipas-recording';
+import { PipasAudio } from '../../modules/pipas-audio';
 
 interface Props {
   onCancel: () => void;
@@ -155,18 +157,202 @@ export function MicIcon({ size = 26, color = '#FFF' }: { size?: number; color?: 
   );
 }
 
-export default function SoundRecorder({ onCancel, onSave }: Props) {
-  if (Platform.OS !== 'web') {
-    return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, backgroundColor: '#000' }}>
-        <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 16, textAlign: 'center', lineHeight: 24 }}>
-          Gravação de sons não está disponível no celular ainda.{'\n\n'}Use o app no computador para gravar sons.
-        </Text>
-        <TouchableOpacity onPress={onCancel} style={{ marginTop: 32, paddingVertical: 14, paddingHorizontal: 32, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
-          <Text style={{ color: '#fff', fontSize: 16 }}>Voltar</Text>
+// ── Android-native recording component ───────────────────────────────────────
+
+function NativeSoundRecorder({ onCancel, onSave }: Props) {
+  const [stage, setStage]       = useState<Stage>('idle');
+  const [seconds, setSeconds]   = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [soundName, setSoundName] = useState('Gravação 1');
+  const [error, setError]       = useState<string | null>(null);
+  const [ampBars, setAmpBars]   = useState<number[]>(Array(30).fill(0));
+
+  const pulse       = useRef(new Animated.Value(1)).current;
+  const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const ampPollRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const filePathRef = useRef<string | null>(null);
+  const ampHistRef  = useRef<number[]>(Array(30).fill(0));
+
+  // Timer + pulse + amplitude polling during recording
+  useEffect(() => {
+    if (stage === 'recording') {
+      timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000);
+      Animated.loop(Animated.sequence([
+        Animated.timing(pulse, { toValue: 1.1, duration: 700, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1,   duration: 700, useNativeDriver: true }),
+      ])).start();
+
+      // Poll amplitude every 100ms for live bar display
+      ampPollRef.current = setInterval(() => {
+        const amp = PipasRecording.getMaxAmplitude(); // 0–32767
+        const norm = Math.min(1, amp / 20000);
+        ampHistRef.current = [...ampHistRef.current.slice(1), norm];
+        setAmpBars([...ampHistRef.current]);
+      }, 100);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (ampPollRef.current) clearInterval(ampPollRef.current);
+      pulse.stopAnimation(); pulse.setValue(1);
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (ampPollRef.current) clearInterval(ampPollRef.current);
+    };
+  }, [stage]);
+
+  const fmt = (s: number) =>
+    `${Math.floor(s / 60).toString().padStart(2,'0')}:${(s % 60).toString().padStart(2,'0')}`;
+
+  const startRecording = async () => {
+    setError(null); setSeconds(0);
+    ampHistRef.current = Array(30).fill(0);
+    setAmpBars(Array(30).fill(0));
+    try {
+      const path = await PipasRecording.startRecording();
+      filePathRef.current = path;
+      setStage('recording');
+    } catch (e: any) {
+      setError(e?.message ?? 'Erro ao iniciar gravação. Permita o acesso ao microfone.');
+    }
+  };
+
+  const stopRecording = async () => {
+    try {
+      const path = await PipasRecording.stopRecording();
+      filePathRef.current = path;
+      setStage('preview');
+    } catch (e: any) {
+      setError(e?.message ?? 'Erro ao parar gravação.');
+      setStage('idle');
+    }
+  };
+
+  const togglePlay = async () => {
+    const path = filePathRef.current;
+    if (!path) return;
+    if (isPlaying) {
+      await PipasAudio.stopFile(path).catch(() => {});
+      setIsPlaying(false);
+    } else {
+      setIsPlaying(true);
+      PipasAudio.playFile(path)
+        .catch(() => {})
+        .finally(() => setIsPlaying(false));
+    }
+  };
+
+  const resetToIdle = async () => {
+    const path = filePathRef.current;
+    if (path) await PipasAudio.stopFile(path).catch(() => {});
+    setIsPlaying(false);
+    setStage('idle'); setSeconds(0);
+    filePathRef.current = null;
+    setAmpBars(Array(30).fill(0));
+    ampHistRef.current = Array(30).fill(0);
+  };
+
+  const handleSave = () => {
+    const path = filePathRef.current;
+    if (!path) return;
+    onSave(soundName || 'Gravação', path);
+  };
+
+  const isIdle      = stage === 'idle';
+  const isRecording = stage === 'recording';
+  const isPreview   = stage === 'preview';
+
+  return (
+    <View style={styles.outerWrap}>
+      <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, { gap: 24 }]} keyboardShouldPersistTaps="handled">
+
+        {/* Timer */}
+        <View style={styles.timerRow}>
+          <Text style={styles.timerText}>{fmt(seconds)}</Text>
+        </View>
+
+        {/* Amplitude bars (visible during recording) */}
+        <View style={[styles.eqWrap, { height: 100, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, gap: 2 }]}>
+          {ampBars.map((v, i) => {
+            const h = Math.max(4, v * 80);
+            return (
+              <View key={i} style={{
+                flex: 1, height: h, borderRadius: 2,
+                backgroundColor: isRecording ? `rgba(91,196,209,${0.3 + v * 0.7})` : 'rgba(255,255,255,0.08)',
+              }} />
+            );
+          })}
+        </View>
+
+        {/* Action buttons */}
+        <View style={styles.actionRow}>
+          {isPreview ? (
+            <>
+              <TouchableOpacity style={[styles.circleBtn, styles.circlePrimary]} onPress={togglePlay}>
+                <Text style={styles.circleIcon}>{isPlaying ? '■' : '▶'}</Text>
+              </TouchableOpacity>
+            </>
+          ) : isRecording ? (
+            <Animated.View style={{ transform: [{ scale: pulse }] }}>
+              <TouchableOpacity style={styles.stopBtn} onPress={stopRecording} activeOpacity={0.85}>
+                <View style={styles.stopSquare} />
+              </TouchableOpacity>
+            </Animated.View>
+          ) : (
+            <TouchableOpacity style={styles.startBtn} onPress={startRecording} activeOpacity={0.85}>
+              <MicIcon size={26} color="#FFF" />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {(isIdle || isRecording) && (
+          <Text style={styles.hint}>{isIdle ? 'Toque para gravar' : 'Toque para parar'}</Text>
+        )}
+
+        {/* Name input */}
+        <TextInput
+          style={styles.nameInput}
+          value={soundName}
+          onChangeText={isPreview ? setSoundName : undefined}
+          editable={isPreview}
+          placeholder="Nome da gravação"
+          placeholderTextColor="rgba(255,255,255,0.25)"
+          selectionColor={TEAL}
+        />
+
+        {error && <Text style={styles.errorText}>{error}</Text>}
+      </ScrollView>
+
+      {/* CTA bar */}
+      <View style={styles.ctaBar}>
+        <TouchableOpacity
+          style={[styles.saveBtn, isPreview ? styles.saveBtnActive : styles.saveBtnInactive]}
+          onPress={isPreview ? handleSave : undefined}
+          disabled={!isPreview}
+          activeOpacity={0.85}
+        >
+          <Text style={[styles.saveBtnText, !isPreview && { color: 'rgba(255,255,255,0.4)' }]}>GUARDAR</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.regravarBtn, isPreview ? styles.regravarBtnActive : styles.regravarBtnInactive]}
+          onPress={isPreview ? resetToIdle : undefined}
+          disabled={!isPreview}
+          activeOpacity={0.85}
+        >
+          <Text style={[styles.regravarText, !isPreview && { color: 'rgba(255,255,255,0.3)' }]}>REGRAVAR</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={onCancel} activeOpacity={0.7} style={styles.cancelLink}>
+          <Text style={styles.cancelLinkText}>Cancelar</Text>
         </TouchableOpacity>
       </View>
-    );
+    </View>
+  );
+}
+
+// ── Web recording component ───────────────────────────────────────────────────
+
+export default function SoundRecorder({ onCancel, onSave }: Props) {
+  if (Platform.OS !== 'web') {
+    return <NativeSoundRecorder onCancel={onCancel} onSave={onSave} />;
   }
   const [stage, setStage]         = useState<Stage>('idle');
   const [seconds, setSeconds]     = useState(0);

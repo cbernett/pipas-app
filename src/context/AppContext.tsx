@@ -116,15 +116,22 @@ async function executeBlock(
       ?? 'meow!';
     const allUserSounds = getUserSounds();
     const userSound = allUserSounds.find(s => s.name === soundName);
-    const playPromise = userSound && Platform.OS === 'web'
-      ? new Promise<void>(resolve => {
-          const audio = new Audio(userSound.uri);
-          audio.volume = globalVolume;
-          audio.onended = () => resolve();
-          audio.onerror = () => resolve();
-          audio.play().catch(() => resolve());
-        })
-      : playSound(soundName).catch(() => {});
+    let playPromise: Promise<void>;
+    if (userSound && Platform.OS === 'web') {
+      playPromise = new Promise<void>(resolve => {
+        const audio = new Audio(userSound.uri);
+        audio.volume = globalVolume;
+        audio.onended = () => resolve();
+        audio.onerror = () => resolve();
+        audio.play().catch(() => resolve());
+      });
+    } else if (userSound && Platform.OS !== 'web') {
+      // Android: uri is a file path recorded by PipasRecording
+      const { PipasAudio } = require('../../modules/pipas-audio');
+      playPromise = PipasAudio.playFile(userSound.uri).catch(() => {});
+    } else {
+      playPromise = playSound(soundName).catch(() => {});
+    }
     if (waitForEnd) await playPromise;
     // som_1: fire and forget — playPromise runs in background
   } else if (defId === 'luz_4') {                         // ligue LED

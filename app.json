@@ -11,7 +11,7 @@
     },
     "android": {
       "package": "com.pipaslabs.app",
-      "versionCode": 17,
+      "versionCode": 18,
       "permissions": [
         "android.permission.USB_PERMISSION",
         "android.permission.RECORD_AUDIO"

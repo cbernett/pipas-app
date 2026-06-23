@@ -48,6 +48,9 @@ export default function SoundList({ onSelectSound, initialSubTab = 'biblioteca' 
       if (Platform.OS === 'web' && audioBlobRef.current) {
         audioBlobRef.current.pause();
         audioBlobRef.current = null;
+      } else if (Platform.OS !== 'web' && sound.uri) {
+        const { PipasAudio } = require('../../modules/pipas-audio');
+        PipasAudio.stopFile(sound.uri).catch(() => {});
       } else {
         await stopAllSounds();
       }
@@ -60,6 +63,10 @@ export default function SoundList({ onSelectSound, initialSubTab = 'biblioteca' 
       audioBlobRef.current = audio;
       audio.onended = () => { setPlayingId(null); audioBlobRef.current = null; };
       audio.play().catch(() => setPlayingId(null));
+    } else if (Platform.OS !== 'web' && sound.uri) {
+      // Recorded user sound — play from file path
+      const { PipasAudio } = require('../../modules/pipas-audio');
+      PipasAudio.playFile(sound.uri).catch(() => {}).finally(() => setPlayingId(null));
     } else {
       await playSound(sound.fileKey);
       setPlayingId(null);

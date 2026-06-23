@@ -1,6 +1,9 @@
 import React, { useRef, useState, useCallback, useEffect, useLayoutEffect } from 'react';
 import { View, ScrollView, Text, StyleSheet, Animated, TouchableOpacity, useWindowDimensions, Platform, PanResponder, Dimensions } from 'react-native';
-import { flushSync } from 'react-dom';
+// flushSync is only used in web pointer-event handlers; never import react-dom on native
+// because it registers the web reconciler and destabilizes Fabric/New Architecture.
+const flushSync: (fn: () => void) => void =
+  Platform.OS === 'web' ? require('react-dom').flushSync : (fn) => fn();
 
 import { useApp, WorkspaceBlock, BlockStack } from '../context/AppContext';
 

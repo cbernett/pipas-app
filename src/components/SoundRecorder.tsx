@@ -4,6 +4,7 @@ import {
   TextInput, ScrollView, PanResponder,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { PermissionsAndroid } from 'react-native';
 
 interface Props {
   onCancel: () => void;
@@ -210,6 +211,14 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
     ampHistRef.current = Array(30).fill(0);
     setAmpBars(Array(30).fill(0));
     try {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+        { title: 'Microfone', message: 'Pipas precisa do microfone para gravar sons.', buttonPositive: 'Permitir' }
+      );
+      if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+        setError('Permita o acesso ao microfone nas configurações.');
+        return;
+      }
       const path = await getPipasRecording().startRecording();
       filePathRef.current = path;
       setStage('recording');

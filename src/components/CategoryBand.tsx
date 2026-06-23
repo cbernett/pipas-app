@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { BlockDef, CATEGORY_COLORS, CATEGORY_DARK, BlockCategory } from '../data/blocks';
 import { useApp, WorkspaceBlock } from '../context/AppContext';
 import CodeBlock from './CodeBlock';
@@ -105,19 +106,23 @@ function LibraryBlockItemNative({ block, addStack }: { block: BlockDef; addStack
 
   const isBracket = ['ctrl_2', 'ctrl_3', 'ctrl_4', 'ctrl_5'].includes(block.id);
 
+  // Use RNGHR Gesture.Tap so the gesture lives inside GestureHandlerRootView
+  // and never conflicts with PanResponder draggers in the workspace.
+  const tap = Gesture.Tap()
+    .runOnJS(true)
+    .onEnd(() => {
+      const col = nativePlaceCount % 3;
+      const row = Math.floor(nativePlaceCount / 3) % 4;
+      nativePlaceCount++;
+      addStack(wsBlock, 20 + col * 120, 60 + row * 130);
+    });
+
   return (
-    <TouchableOpacity
-      style={styles.blockItem}
-      activeOpacity={0.7}
-      onPress={() => {
-        const col = nativePlaceCount % 3;
-        const row = Math.floor(nativePlaceCount / 3) % 4;
-        nativePlaceCount++;
-        addStack(wsBlock, 20 + col * 120, 60 + row * 130);
-      }}
-    >
-      <CodeBlock block={wsBlock} preview showBracket={isBracket} isFirst isLast />
-    </TouchableOpacity>
+    <GestureDetector gesture={tap}>
+      <View style={styles.blockItem}>
+        <CodeBlock block={wsBlock} preview showBracket={isBracket} isFirst isLast />
+      </View>
+    </GestureDetector>
   );
 }
 

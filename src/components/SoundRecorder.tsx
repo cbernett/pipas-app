@@ -4,8 +4,6 @@ import {
   TextInput, ScrollView, PanResponder,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { PipasRecording } from '../../modules/pipas-recording';
-import { PipasAudio } from '../../modules/pipas-audio';
 
 interface Props {
   onCancel: () => void;
@@ -159,6 +157,10 @@ export function MicIcon({ size = 26, color = '#FFF' }: { size?: number; color?: 
 
 // ── Android-native recording component ───────────────────────────────────────
 
+// Lazy-loaded so a missing native module doesn't crash the app at startup
+const getPipasRecording = () => require('../../modules/pipas-recording').PipasRecording;
+const getPipasAudio     = () => require('../../modules/pipas-audio').PipasAudio;
+
 function NativeSoundRecorder({ onCancel, onSave }: Props) {
   const [stage, setStage]       = useState<Stage>('idle');
   const [seconds, setSeconds]   = useState(0);
@@ -184,7 +186,7 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
 
       // Poll amplitude every 100ms for live bar display
       ampPollRef.current = setInterval(() => {
-        const amp = PipasRecording.getMaxAmplitude(); // 0–32767
+        const amp = getPipasRecording().getMaxAmplitude(); // 0–32767
         const norm = Math.min(1, amp / 20000);
         ampHistRef.current = [...ampHistRef.current.slice(1), norm];
         setAmpBars([...ampHistRef.current]);
@@ -208,7 +210,7 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
     ampHistRef.current = Array(30).fill(0);
     setAmpBars(Array(30).fill(0));
     try {
-      const path = await PipasRecording.startRecording();
+      const path = await getPipasRecording().startRecording();
       filePathRef.current = path;
       setStage('recording');
     } catch (e: any) {
@@ -218,7 +220,7 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
 
   const stopRecording = async () => {
     try {
-      const path = await PipasRecording.stopRecording();
+      const path = await getPipasRecording().stopRecording();
       filePathRef.current = path;
       setStage('preview');
     } catch (e: any) {
@@ -231,11 +233,11 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
     const path = filePathRef.current;
     if (!path) return;
     if (isPlaying) {
-      await PipasAudio.stopFile(path).catch(() => {});
+      await getPipasAudio().stopFile(path).catch(() => {});
       setIsPlaying(false);
     } else {
       setIsPlaying(true);
-      PipasAudio.playFile(path)
+      getPipasAudio().playFile(path)
         .catch(() => {})
         .finally(() => setIsPlaying(false));
     }
@@ -243,7 +245,7 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
 
   const resetToIdle = async () => {
     const path = filePathRef.current;
-    if (path) await PipasAudio.stopFile(path).catch(() => {});
+    if (path) await getPipasAudio().stopFile(path).catch(() => {});
     setIsPlaying(false);
     setStage('idle'); setSeconds(0);
     filePathRef.current = null;

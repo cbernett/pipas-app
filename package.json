@@ -13,6 +13,7 @@
     "expo-modules-core": "~56.0.17",
     "expo-status-bar": "~56.0.4",
     "pipas-audio": "file:./modules/pipas-audio",
+    "pipas-recording": "file:./modules/pipas-recording",
     "pipas-usb-serial": "file:./modules/pipas-usb-serial",
     "react": "19.2.3",
     "react-dom": "19.2.3",

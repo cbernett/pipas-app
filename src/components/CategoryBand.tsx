@@ -114,7 +114,9 @@ function LibraryBlockItemNative({ block, addStack }: { block: BlockDef; addStack
         const col = nativePlaceCount % 3;
         const row = Math.floor(nativePlaceCount / 3) % 4;
         nativePlaceCount++;
-        addStack(wsBlock, 20 + col * 120, 60 + row * 130);
+        // Defer by one frame so the touch is fully released before a new
+        // NativeStackDragger (PanResponder) mounts — prevents Fabric crash.
+        setTimeout(() => addStack(wsBlock, 20 + col * 120, 60 + row * 130), 0);
       }}
     >
       <CodeBlock block={wsBlock} preview showBracket={isBracket} isFirst isLast />

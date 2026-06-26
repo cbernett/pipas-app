@@ -17,6 +17,7 @@ function NativeStackDragger({
   onDragMove,
   onTap,
   onSplitStart,
+  onSplitCancel,
   splitOverlayX,
   splitOverlayY,
   children,

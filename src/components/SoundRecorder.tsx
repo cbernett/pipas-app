@@ -163,6 +163,7 @@ const getPipasRecording = () => require('../../modules/pipas-recording').PipasRe
 const getPipasAudio     = () => require('../../modules/pipas-audio').PipasAudio;
 
 const BAR_COUNT = 40;
+const EFFECT_SPEEDS: Record<string, number> = { fast: 1.7, slow: 0.55 };
 
 function NativeSoundRecorder({ onCancel, onSave }: Props) {
   const [stage, setStage]           = useState<Stage>('idle');
@@ -173,19 +174,25 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
   const [ampBars, setAmpBars]       = useState<number[]>(Array(BAR_COUNT).fill(0));
   const [frozenBars, setFrozenBars] = useState<number[]>(Array(BAR_COUNT).fill(0));
   const [activeEffect, setActiveEffect] = useState<string | null>(null);
-  const [trimStartDisp, setTrimStartDisp] = useState(0);
-  const [trimEndDisp,   setTrimEndDisp]   = useState(1);
+  const [trimStart, setTrimStart]   = useState(0);
+  const [trimEnd,   setTrimEnd]     = useState(1);
+  const [trackW,    setTrackW]      = useState(300);
 
   const pulse        = useRef(new Animated.Value(1)).current;
   const timerRef     = useRef<ReturnType<typeof setInterval> | null>(null);
   const ampPollRef   = useRef<ReturnType<typeof setInterval> | null>(null);
   const filePathRef  = useRef<string | null>(null);
   const ampHistRef   = useRef<number[]>(Array(BAR_COUNT).fill(0));
-  const trackWRef    = useRef(300);
   const trimStartRef = useRef(0);
   const trimEndRef   = useRef(1);
+  const activeEffectRef = useRef<string | null>(null);
+  // Drag state
+  const dragWhichRef   = useRef<'start' | 'end' | null>(null);
+  const dragInitValRef = useRef(0);
 
-  // Timer + pulse + amplitude polling during recording
+  useEffect(() => { activeEffectRef.current = activeEffect; }, [activeEffect]);
+
+  // Timer + pulse + amplitude polling
   useEffect(() => {
     if (stage === 'recording') {
       timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000);
@@ -219,7 +226,7 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
     setAmpBars(Array(BAR_COUNT).fill(0));
     setActiveEffect(null);
     trimStartRef.current = 0; trimEndRef.current = 1;
-    setTrimStartDisp(0); setTrimEndDisp(1);
+    setTrimStart(0); setTrimEnd(1);
     try {
       const granted = await PermissionsAndroid.request(
         PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
@@ -233,7 +240,7 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
       filePathRef.current = path;
       setStage('recording');
     } catch (e: any) {
-      setError(e?.message ?? 'Erro ao iniciar gravação. Permita o acesso ao microfone.');
+      setError(e?.message ?? 'Erro ao iniciar gravação.');
     }
   };
 
@@ -257,9 +264,12 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
       setIsPlaying(false);
     } else {
       setIsPlaying(true);
-      getPipasAudio().playFile(path)
-        .catch(() => {})
-        .finally(() => setIsPlaying(false));
+      const eff   = activeEffectRef.current;
+      const speed = eff ? (EFFECT_SPEEDS[eff] ?? 1) : 1;
+      const playFn = speed !== 1
+        ? getPipasAudio().playFileAtSpeed(path, speed)
+        : getPipasAudio().playFile(path);
+      playFn.catch(() => {}).finally(() => setIsPlaying(false));
     }
   };
 
@@ -274,7 +284,7 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
     ampHistRef.current = Array(BAR_COUNT).fill(0);
     setActiveEffect(null);
     trimStartRef.current = 0; trimEndRef.current = 1;
-    setTrimStartDisp(0); setTrimEndDisp(1);
+    setTrimStart(0); setTrimEnd(1);
   };
 
   const handleSave = () => {
@@ -283,194 +293,242 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
     onSave(soundName || 'Gravação', path);
   };
 
-  // Trim PanResponder for the native waveform
-  const dragWhichRef = useRef<'start' | 'end' | null>(null);
+  // Trim PanResponder — uses gestureState.dx delta so it works reliably on Android
   const trimPanResponder = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder:  () => true,
-    onPanResponderGrant: (e) => {
-      const locationX = (e.nativeEvent as any).locationX ?? 0;
-      const width = trackWRef.current || 300;
-      const pos   = Math.max(0, Math.min(1, locationX / width));
-      dragWhichRef.current =
-        Math.abs(pos - trimStartRef.current) <= Math.abs(pos - trimEndRef.current) ? 'start' : 'end';
-    },
-    onPanResponderMove: (e) => {
-      const which = dragWhichRef.current; if (!which) return;
-      const pageX: number = (e.nativeEvent as any).pageX ?? 0;
-      // approximate position from pageX — use layout offset stored on grant
-      const width = trackWRef.current || 300;
-      const locationX = (e.nativeEvent as any).locationX ?? 0;
-      const p = Math.max(0, Math.min(1, locationX / width));
-      if (which === 'start') {
-        trimStartRef.current = Math.min(p, trimEndRef.current - 0.04);
-        setTrimStartDisp(trimStartRef.current);
+    onPanResponderGrant: (_e, gs) => {
+      // Identify which handle is closer to touch point
+      const w = trackW || 300;
+      // locationX may not be reliable; estimate from absolute position
+      const locX = (_e.nativeEvent as any).locationX ?? 0;
+      const pos  = Math.max(0, Math.min(1, locX / w));
+      if (Math.abs(pos - trimStartRef.current) <= Math.abs(pos - trimEndRef.current)) {
+        dragWhichRef.current   = 'start';
+        dragInitValRef.current = trimStartRef.current;
       } else {
-        trimEndRef.current = Math.max(p, trimStartRef.current + 0.04);
-        setTrimEndDisp(trimEndRef.current);
+        dragWhichRef.current   = 'end';
+        dragInitValRef.current = trimEndRef.current;
       }
     },
-    onPanResponderRelease: () => { dragWhichRef.current = null; },
+    onPanResponderMove: (_e, gs) => {
+      const which = dragWhichRef.current; if (!which) return;
+      const w     = trackW || 300;
+      const delta = gs.dx / w;
+      if (which === 'start') {
+        const v = Math.max(0, Math.min(trimEndRef.current - 0.04, dragInitValRef.current + delta));
+        trimStartRef.current = v; setTrimStart(v);
+      } else {
+        const v = Math.min(1, Math.max(trimStartRef.current + 0.04, dragInitValRef.current + delta));
+        trimEndRef.current = v; setTrimEnd(v);
+      }
+    },
+    onPanResponderRelease:   () => { dragWhichRef.current = null; },
     onPanResponderTerminate: () => { dragWhichRef.current = null; },
-  }), []);
+  }), [trackW]);
 
   const isIdle      = stage === 'idle';
   const isRecording = stage === 'recording';
   const isPreview   = stage === 'preview';
-
   const displayBars = isPreview ? frozenBars : ampBars;
 
+  // Pixel positions for bracket handles
+  const startPx = trimStart * trackW;
+  const endPx   = trimEnd   * trackW;
+
   return (
-    <View style={styles.outerWrap}>
-      <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, { gap: 20 }]} keyboardShouldPersistTaps="handled">
+    <View style={nStyles.wrap}>
 
-        {/* Timer */}
-        <View style={styles.timerRow}>
-          <Text style={styles.timerText}>{fmt(seconds)}</Text>
-        </View>
+      {/* Timer */}
+      <Text style={nStyles.timer}>{fmt(seconds)}</Text>
 
-        {/* Waveform / amplitude bars */}
-        <View
-          style={[styles.eqWrap, { height: TRACK_H, position: 'relative' }]}
-          onLayout={e => { trackWRef.current = e.nativeEvent.layout.width; }}
-        >
-          {/* Bars */}
-          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, gap: 2 }}>
-            {displayBars.map((v, i) => {
-              // dim bars outside trim region in preview
-              const barPos = i / BAR_COUNT;
-              const inTrim = !isPreview || (barPos >= trimStartDisp && barPos <= trimEndDisp);
-              const h = Math.max(4, v * 80);
-              return (
-                <View key={i} style={{
-                  flex: 1, height: h, borderRadius: 2,
-                  backgroundColor: isRecording
-                    ? `rgba(91,196,209,${0.3 + v * 0.7})`
-                    : inTrim
-                      ? `rgba(91,196,209,${0.3 + v * 0.7})`
-                      : 'rgba(255,255,255,0.08)',
-                }} />
-              );
-            })}
-          </View>
-
-          {/* Trim overlays + handles (preview only) */}
-          {isPreview && (
-            <View style={StyleSheet.absoluteFillObject} {...trimPanResponder.panHandlers}>
-              {/* Left dark overlay */}
-              <View style={{
-                position: 'absolute', top: 0, bottom: 0, left: 0,
-                width: `${trimStartDisp * 100}%`,
-                backgroundColor: 'rgba(0,0,0,0.55)',
-              }} />
-              {/* Right dark overlay */}
-              <View style={{
-                position: 'absolute', top: 0, bottom: 0, right: 0,
-                width: `${(1 - trimEndDisp) * 100}%`,
-                backgroundColor: 'rgba(0,0,0,0.55)',
-              }} />
-              {/* Left bracket */}
-              <View style={{
-                position: 'absolute', top: 0, bottom: 0,
-                left: `${trimStartDisp * 100}%` as any,
-                width: BRACKET_W, backgroundColor: '#FFF',
-              }} />
-              <View style={{ position: 'absolute', top: 0, left: `${trimStartDisp * 100}%` as any, height: BRACKET_W, width: BRACKET_CAP + BRACKET_W, backgroundColor: '#FFF' }} />
-              <View style={{ position: 'absolute', bottom: 0, left: `${trimStartDisp * 100}%` as any, height: BRACKET_W, width: BRACKET_CAP + BRACKET_W, backgroundColor: '#FFF' }} />
-              {/* Right bracket */}
-              <View style={{
-                position: 'absolute', top: 0, bottom: 0,
-                left: `${trimEndDisp * 100}%` as any,
-                width: BRACKET_W, backgroundColor: '#FFF',
-              }} />
-              <View style={{ position: 'absolute', top: 0, left: `${trimEndDisp * 100 - (BRACKET_CAP / (trackWRef.current || 300)) * 100}%` as any, height: BRACKET_W, width: BRACKET_CAP + BRACKET_W, backgroundColor: '#FFF' }} />
-              <View style={{ position: 'absolute', bottom: 0, left: `${trimEndDisp * 100 - (BRACKET_CAP / (trackWRef.current || 300)) * 100}%` as any, height: BRACKET_W, width: BRACKET_CAP + BRACKET_W, backgroundColor: '#FFF' }} />
-            </View>
-          )}
-        </View>
-
-        {/* Action buttons */}
-        <View style={styles.actionRow}>
-          {isPreview ? (
-            <TouchableOpacity style={[styles.circleBtn, styles.circlePrimary]} onPress={togglePlay}>
-              <Text style={styles.circleIcon}>{isPlaying ? '■' : '▶'}</Text>
-            </TouchableOpacity>
-          ) : isRecording ? (
-            <Animated.View style={{ transform: [{ scale: pulse }] }}>
-              <TouchableOpacity style={styles.stopBtn} onPress={stopRecording} activeOpacity={0.85}>
-                <View style={styles.stopSquare} />
-              </TouchableOpacity>
-            </Animated.View>
-          ) : (
-            <TouchableOpacity style={styles.startBtn} onPress={startRecording} activeOpacity={0.85}>
-              <MicIcon size={26} color="#FFF" />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {(isIdle || isRecording) && (
-          <Text style={styles.hint}>{isIdle ? 'Toque para gravar' : 'Toque para parar'}</Text>
-        )}
-
-        {/* Effects */}
-        <Text style={styles.sectionLabel}>Efeitos sonoros</Text>
-        <View style={styles.effectsRow}>
-          {EFFECTS.map(({ id, label }) => {
-            const isActive = activeEffect === id;
+      {/* Waveform */}
+      <View
+        style={nStyles.waveWrap}
+        onLayout={e => setTrackW(e.nativeEvent.layout.width)}
+      >
+        {/* Bars */}
+        <View style={nStyles.barsRow}>
+          {displayBars.map((v, i) => {
+            const barPos = i / BAR_COUNT;
+            const inTrim = !isPreview || (barPos >= trimStart && barPos <= trimEnd);
+            const h = Math.max(4, v * 56);
             return (
-              <TouchableOpacity
-                key={id}
-                style={[styles.effectChip, isPreview && isActive && styles.effectChipActive]}
-                onPress={isPreview ? () => setActiveEffect(isActive ? null : id) : undefined}
-                activeOpacity={isPreview ? 0.8 : 1}
-              >
-                <Text style={[styles.effectLabel, isPreview && isActive && styles.effectLabelActive]}>
-                  {label}
-                </Text>
-              </TouchableOpacity>
+              <View key={i} style={{
+                flex: 1, height: h, borderRadius: 2,
+                backgroundColor: isRecording
+                  ? `rgba(91,196,209,${0.3 + v * 0.7})`
+                  : inTrim
+                    ? `rgba(91,196,209,${0.3 + v * 0.7})`
+                    : 'rgba(255,255,255,0.1)',
+              }} />
             );
           })}
         </View>
 
-        {/* Name input */}
-        <TextInput
-          style={styles.nameInput}
-          value={soundName}
-          onChangeText={isPreview ? setSoundName : undefined}
-          editable={isPreview}
-          placeholder="Nome da gravação"
-          placeholderTextColor="rgba(255,255,255,0.25)"
-          selectionColor={TEAL}
-        />
+        {/* Trim overlays + bracket handles */}
+        {isPreview && (
+          <View style={StyleSheet.absoluteFillObject} {...trimPanResponder.panHandlers}>
+            {/* Left dim */}
+            <View style={[nStyles.dimOverlay, { left: 0, width: startPx }]} />
+            {/* Right dim */}
+            <View style={[nStyles.dimOverlay, { right: 0, width: Math.max(0, trackW - endPx) }]} />
 
-        {error && <Text style={styles.errorText}>{error}</Text>}
-      </ScrollView>
+            {/* Left bracket: vertical bar + top cap + bottom cap */}
+            <View style={[nStyles.bracketV, { left: startPx }]} />
+            <View style={[nStyles.bracketH, { left: startPx, top: 0 }]} />
+            <View style={[nStyles.bracketH, { left: startPx, bottom: 0 }]} />
+
+            {/* Right bracket: vertical bar + top cap + bottom cap */}
+            <View style={[nStyles.bracketV, { left: endPx - BRACKET_W }]} />
+            <View style={[nStyles.bracketH, { left: endPx - BRACKET_CAP - BRACKET_W, top: 0 }]} />
+            <View style={[nStyles.bracketH, { left: endPx - BRACKET_CAP - BRACKET_W, bottom: 0 }]} />
+          </View>
+        )}
+      </View>
+
+      {/* Record / Stop / Play button */}
+      <View style={nStyles.actionRow}>
+        {isPreview ? (
+          <TouchableOpacity style={[nStyles.circleBtn, nStyles.circlePrimary]} onPress={togglePlay}>
+            <Text style={nStyles.circleIcon}>{isPlaying ? '■' : '▶'}</Text>
+          </TouchableOpacity>
+        ) : isRecording ? (
+          <Animated.View style={{ transform: [{ scale: pulse }] }}>
+            <TouchableOpacity style={nStyles.stopBtn} onPress={stopRecording} activeOpacity={0.85}>
+              <View style={nStyles.stopSquare} />
+            </TouchableOpacity>
+          </Animated.View>
+        ) : (
+          <TouchableOpacity style={nStyles.startBtn} onPress={startRecording} activeOpacity={0.85}>
+            <MicIcon size={22} color="#FFF" />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {(isIdle || isRecording) && (
+        <Text style={nStyles.hint}>{isIdle ? 'Toque para gravar' : 'Toque para parar'}</Text>
+      )}
+
+      {/* Effects — single-select toggle; RÁPIDO/LENTO change playback speed */}
+      <Text style={nStyles.sectionLabel}>Efeitos sonoros</Text>
+      <View style={nStyles.effectsRow}>
+        {EFFECTS.map(({ id, label }) => {
+          const isActive = activeEffect === id;
+          const available = id === 'fast' || id === 'slow';
+          return (
+            <TouchableOpacity
+              key={id}
+              style={[nStyles.effectChip, isActive && nStyles.effectChipActive, !available && nStyles.effectChipDim]}
+              onPress={isPreview && available ? () => setActiveEffect(isActive ? null : id) : undefined}
+              activeOpacity={isPreview && available ? 0.8 : 1}
+            >
+              <Text style={[nStyles.effectLabel, isActive && nStyles.effectLabelActive]}>{label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {/* Name input */}
+      <TextInput
+        style={nStyles.nameInput}
+        value={soundName}
+        onChangeText={isPreview ? setSoundName : undefined}
+        editable={isPreview}
+        placeholder="Nome da gravação"
+        placeholderTextColor="rgba(255,255,255,0.25)"
+        selectionColor={TEAL}
+      />
+
+      {error && <Text style={nStyles.errorText}>{error}</Text>}
 
       {/* CTA bar */}
-      <View style={styles.ctaBar}>
+      <View style={nStyles.ctaBar}>
         <TouchableOpacity
-          style={[styles.saveBtn, isPreview ? styles.saveBtnActive : styles.saveBtnInactive]}
+          style={[nStyles.saveBtn, isPreview ? nStyles.saveBtnActive : nStyles.saveBtnInactive]}
           onPress={isPreview ? handleSave : undefined}
           disabled={!isPreview}
           activeOpacity={0.85}
         >
-          <Text style={[styles.saveBtnText, !isPreview && { color: 'rgba(255,255,255,0.4)' }]}>GUARDAR</Text>
+          <Text style={[nStyles.saveBtnText, !isPreview && { color: 'rgba(255,255,255,0.4)' }]}>GUARDAR</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.regravarBtn, isPreview ? styles.regravarBtnActive : styles.regravarBtnInactive]}
+          style={[nStyles.regravarBtn, isPreview ? nStyles.regravarBtnActive : nStyles.regravarBtnInactive]}
           onPress={isPreview ? resetToIdle : undefined}
           disabled={!isPreview}
           activeOpacity={0.85}
         >
-          <Text style={[styles.regravarText, !isPreview && { color: 'rgba(255,255,255,0.3)' }]}>REGRAVAR</Text>
+          <Text style={[nStyles.regravarText, !isPreview && { color: 'rgba(255,255,255,0.3)' }]}>REGRAVAR</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={onCancel} activeOpacity={0.7} style={styles.cancelLink}>
-          <Text style={styles.cancelLinkText}>Cancelar</Text>
+        <TouchableOpacity onPress={onCancel} activeOpacity={0.7} style={nStyles.cancelLink}>
+          <Text style={nStyles.cancelLinkText}>Cancelar</Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 }
+
+const nStyles = StyleSheet.create({
+  wrap: { flex: 1, backgroundColor: '#000', paddingHorizontal: 20, paddingTop: 16 },
+
+  timer: { fontSize: 28, fontWeight: '200', color: '#FFF', letterSpacing: 3, textAlign: 'center', marginBottom: 12 },
+
+  waveWrap: {
+    width: '100%', height: 72, borderRadius: 10,
+    backgroundColor: '#111', overflow: 'hidden', marginBottom: 4,
+  },
+  barsRow: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, gap: 2,
+  },
+
+  dimOverlay: { position: 'absolute', top: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)' },
+  bracketV:   { position: 'absolute', top: 0, bottom: 0, width: BRACKET_W, backgroundColor: '#FFF' },
+  bracketH:   { position: 'absolute', height: BRACKET_W, width: BRACKET_CAP + BRACKET_W, backgroundColor: '#FFF' },
+
+  actionRow: { height: 64, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginBottom: 2 },
+
+  startBtn: {
+    width: 58, height: 58, borderRadius: 29, backgroundColor: TEAL,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  stopBtn: {
+    width: 50, height: 50, borderRadius: 25, backgroundColor: '#EF4444',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  stopSquare: { width: 18, height: 18, borderRadius: 3, backgroundColor: '#FFF' },
+  circleBtn:     { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
+  circlePrimary: { backgroundColor: TEAL },
+  circleIcon:    { color: '#FFF', fontSize: 18, marginLeft: 2 },
+
+  hint: { fontSize: 12, color: 'rgba(255,255,255,0.4)', textAlign: 'center', marginBottom: 12 },
+
+  sectionLabel: { fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.4)', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 },
+  effectsRow:   { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  effectChip:        { flex: 1, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.08)', paddingVertical: 8, alignItems: 'center' },
+  effectChipActive:  { backgroundColor: TEAL },
+  effectChipDim:     { opacity: 0.35 },
+  effectLabel:       { fontSize: 11, fontWeight: '800', color: 'rgba(255,255,255,0.5)', letterSpacing: 0.5 },
+  effectLabelActive: { color: '#FFF' },
+
+  nameInput: {
+    borderBottomWidth: 1.5, borderBottomColor: 'rgba(255,255,255,0.4)',
+    paddingVertical: 8, fontSize: 16, color: '#FFF', fontWeight: '500',
+    backgroundColor: 'transparent', marginBottom: 16,
+  },
+  errorText: { color: '#EF4444', fontSize: 13, textAlign: 'center', marginBottom: 8 },
+
+  ctaBar: { gap: 0 },
+  saveBtn:         { borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  saveBtnActive:   { backgroundColor: TEAL },
+  saveBtnInactive: { backgroundColor: 'rgba(255,255,255,0.07)' },
+  saveBtnText:     { fontSize: 14, fontWeight: '600', color: '#FFF', letterSpacing: 1.5 },
+  regravarBtn:         { borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
+  regravarBtnActive:   { borderWidth: 1.5, borderColor: '#FFF' },
+  regravarBtnInactive: { borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.2)' },
+  regravarText:        { fontSize: 14, fontWeight: '600', color: '#FFF', letterSpacing: 1.5 },
+  cancelLink:     { alignItems: 'center', paddingVertical: 10, marginTop: 2 },
+  cancelLinkText: { fontSize: 14, fontWeight: '400', color: '#FFF' },
+});
 
 // ── Web recording component ───────────────────────────────────────────────────
 

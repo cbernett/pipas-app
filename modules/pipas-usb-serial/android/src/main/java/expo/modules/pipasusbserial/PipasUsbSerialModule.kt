@@ -8,6 +8,8 @@ import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
+import com.hoho.android.usbserial.driver.CdcAcmSerialDriver
+import com.hoho.android.usbserial.driver.ProbeTable
 import com.hoho.android.usbserial.driver.UsbSerialDriver
 import com.hoho.android.usbserial.driver.UsbSerialPort
 import com.hoho.android.usbserial.driver.UsbSerialProber
@@ -35,16 +37,25 @@ class PipasUsbSerialModule : Module() {
 
     Events("onData", "onDisconnect", "onError")
 
-    // True if at least one USB device matching a known serial chip driver is attached.
+    // True if any USB device is attached (not just ones with known VID/PIDs).
     Function("isSupported") {
       val manager = context.getSystemService(Context.USB_SERVICE) as UsbManager
-      UsbSerialProber.getDefaultProber().findAllDrivers(manager).isNotEmpty()
+      manager.deviceList.isNotEmpty()
     }
 
     AsyncFunction("connect") { baudRate: Int, promise: expo.modules.kotlin.Promise ->
       try {
         val manager = context.getSystemService(Context.USB_SERVICE) as UsbManager
-        val drivers: List<UsbSerialDriver> = UsbSerialProber.getDefaultProber().findAllDrivers(manager)
+        // Try default prober first (FTDI, CH340, CP210x, PL2303, CDC)
+        var drivers: List<UsbSerialDriver> = UsbSerialProber.getDefaultProber().findAllDrivers(manager)
+        // Fallback: wrap every attached device as CdcAcm (covers Arduino, Adafruit, etc.)
+        if (drivers.isEmpty()) {
+          val customTable = ProbeTable()
+          for (dev in manager.deviceList.values) {
+            customTable.addProduct(dev.vendorId, dev.productId, CdcAcmSerialDriver::class.java)
+          }
+          drivers = UsbSerialProber(customTable).findAllDrivers(manager)
+        }
         val driver = drivers.firstOrNull()
         if (driver == null) {
           promise.reject("NO_DEVICE", "Nenhuma placa USB encontrada", null)

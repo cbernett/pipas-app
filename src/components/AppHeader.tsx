@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image, Platform } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../context/AppContext';
 import BoardStatusButton from './BoardStatusButton';
@@ -9,13 +9,8 @@ export default function AppHeader() {
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={styles.container}>
-      {Platform.OS !== 'web' && (
-        <View style={{ backgroundColor: '#5BC4D1', paddingVertical: 2, alignItems: 'center' }}>
-          <Text style={{ color: '#000', fontSize: 10, fontWeight: '700' }}>BUILD v22 — 25 JUN</Text>
-        </View>
-      )}
-      <View style={[styles.row, { paddingTop: Math.max(insets.top, 10) + 10 }]}>
+    <View style={[styles.container, { paddingTop: Math.max(insets.top, 10) }]}>
+      <View style={styles.row}>
 
         {/* Left: icon tabs */}
         <View style={styles.tabs}>
@@ -41,7 +36,7 @@ export default function AppHeader() {
           })}
         </View>
 
-        {/* Center: icon — flex:1 + alignItems center keeps it truly centred */}
+        {/* Center: logo — absolutely positioned so left/right don't push it */}
         <View style={styles.centerLogo} pointerEvents="none">
           <Image
             source={require('../../assets/pipas_header_logo.png')}
@@ -71,8 +66,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-
-    paddingBottom: 10,
+    paddingVertical: 10,
+    minHeight: 52,
   },
 
   // Left — icon tabs
@@ -83,16 +78,16 @@ const styles = StyleSheet.create({
   },
   tab: {
     paddingHorizontal: 6,
-    paddingVertical: 4,
+    paddingTop: 4,
+    paddingBottom: 2,
     alignItems: 'center',
+    gap: 5,
   },
   tabIcon: {
-    width: 18,
-    height: 18,
+    width: 20,
+    height: 20,
   },
   tabUnderline: {
-    position: 'absolute',
-    bottom: 0,
     height: 2,
     borderRadius: 1,
     width: 28,
@@ -100,8 +95,7 @@ const styles = StyleSheet.create({
   tabUnderlineActive:   { backgroundColor: '#FFF' },
   tabUnderlineInactive: { backgroundColor: 'rgba(255,255,255,0.25)' },
 
-  // Center — absolutely positioned so left/right content can't push it off-center.
-  // top/bottom: 0 ensures it fills the row height so justifyContent: 'center' works.
+  // Center — absolutely positioned
   centerLogo: {
     position: 'absolute',
     top: 0,

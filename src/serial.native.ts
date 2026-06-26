@@ -63,9 +63,6 @@ class PipasBoardSerialNative {
   }
 
   async connect(): Promise<void> {
-    if (!this.isSupported) {
-      throw new Error('Nenhuma placa USB compatível encontrada. Conecte a placa via cabo USB-OTG.');
-    }
     await PipasUsbSerial.connect(this.baud);
     this.connected = true;
 

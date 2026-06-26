@@ -162,7 +162,11 @@ export function MicIcon({ size = 26, color = '#FFF' }: { size?: number; color?: 
 const getPipasRecording = () => require('../../modules/pipas-recording').PipasRecording;
 const getPipasAudio     = () => require('../../modules/pipas-audio').PipasAudio;
 
-const BAR_COUNT = 40;
+const BAR_COUNT   = 40;
+const WAVE_H      = 72;
+const BKT_W       = 5;   // bracket bar width
+const BKT_CAP     = 22;  // bracket cap length
+const BKT_TOUCH   = 28;  // invisible touch-target half-width around bracket
 const EFFECT_SPEEDS: Record<string, number> = { fast: 1.7, slow: 0.55 };
 
 function NativeSoundRecorder({ onCancel, onSave }: Props) {
@@ -332,7 +336,6 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
   const isPreview   = stage === 'preview';
   const displayBars = isPreview ? frozenBars : ampBars;
 
-  // Pixel positions for bracket handles
   const startPx = trimStart * trackW;
   const endPx   = trimEnd   * trackW;
 
@@ -342,47 +345,51 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
       {/* Timer */}
       <Text style={nStyles.timer}>{fmt(seconds)}</Text>
 
-      {/* Waveform */}
-      <View
-        style={nStyles.waveWrap}
-        onLayout={e => setTrackW(e.nativeEvent.layout.width)}
-      >
-        {/* Bars */}
-        <View style={nStyles.barsRow}>
-          {displayBars.map((v, i) => {
-            const barPos = i / BAR_COUNT;
-            const inTrim = !isPreview || (barPos >= trimStart && barPos <= trimEnd);
-            const h = Math.max(4, v * 56);
-            return (
-              <View key={i} style={{
-                flex: 1, height: h, borderRadius: 2,
-                backgroundColor: isRecording
-                  ? `rgba(91,196,209,${0.3 + v * 0.7})`
-                  : inTrim
+      {/* Waveform container — overflow visible so brackets are never clipped */}
+      <View style={nStyles.waveOuter}>
+        {/* Bars (clipped to rounded box) */}
+        <View
+          style={nStyles.waveWrap}
+          onLayout={e => setTrackW(e.nativeEvent.layout.width)}
+        >
+          <View style={nStyles.barsRow}>
+            {displayBars.map((v, i) => {
+              const barPos = i / BAR_COUNT;
+              const inTrim = !isPreview || (barPos >= trimStart && barPos <= trimEnd);
+              const h = Math.max(4, v * 54);
+              return (
+                <View key={i} style={{
+                  flex: 1, height: h, borderRadius: 2,
+                  backgroundColor: isRecording
                     ? `rgba(91,196,209,${0.3 + v * 0.7})`
-                    : 'rgba(255,255,255,0.1)',
-              }} />
-            );
-          })}
+                    : inTrim
+                      ? `rgba(91,196,209,${0.3 + v * 0.7})`
+                      : 'rgba(255,255,255,0.1)',
+                }} />
+              );
+            })}
+          </View>
+
+          {/* Dim overlays inside clipped box */}
+          {isPreview && (
+            <>
+              <View style={[nStyles.dimOverlay, { left: 0, width: Math.max(0, startPx) }]} />
+              <View style={[nStyles.dimOverlay, { right: 0, width: Math.max(0, trackW - endPx) }]} />
+            </>
+          )}
         </View>
 
-        {/* Trim overlays + bracket handles */}
+        {/* Bracket handles — outside clipped box, absolutely on waveOuter */}
         {isPreview && (
           <View style={StyleSheet.absoluteFillObject} {...trimPanResponder.panHandlers}>
-            {/* Left dim */}
-            <View style={[nStyles.dimOverlay, { left: 0, width: startPx }]} />
-            {/* Right dim */}
-            <View style={[nStyles.dimOverlay, { right: 0, width: Math.max(0, trackW - endPx) }]} />
-
-            {/* Left bracket: vertical bar + top cap + bottom cap */}
-            <View style={[nStyles.bracketV, { left: startPx }]} />
-            <View style={[nStyles.bracketH, { left: startPx, top: 0 }]} />
-            <View style={[nStyles.bracketH, { left: startPx, bottom: 0 }]} />
-
-            {/* Right bracket: vertical bar + top cap + bottom cap */}
-            <View style={[nStyles.bracketV, { left: endPx - BRACKET_W }]} />
-            <View style={[nStyles.bracketH, { left: endPx - BRACKET_CAP - BRACKET_W, top: 0 }]} />
-            <View style={[nStyles.bracketH, { left: endPx - BRACKET_CAP - BRACKET_W, bottom: 0 }]} />
+            {/* Left bracket */}
+            <View style={[nStyles.bracketV, { left: startPx - BKT_W / 2 }]} />
+            <View style={[nStyles.bracketH, { left: startPx - BKT_W / 2, top: 0 }]} />
+            <View style={[nStyles.bracketH, { left: startPx - BKT_W / 2, bottom: 0 }]} />
+            {/* Right bracket */}
+            <View style={[nStyles.bracketV, { left: endPx - BKT_W / 2 }]} />
+            <View style={[nStyles.bracketH, { left: endPx - BKT_CAP - BKT_W / 2, top: 0 }]} />
+            <View style={[nStyles.bracketH, { left: endPx - BKT_CAP - BKT_W / 2, bottom: 0 }]} />
           </View>
         )}
       </View>
@@ -410,18 +417,20 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
         <Text style={nStyles.hint}>{isIdle ? 'Toque para gravar' : 'Toque para parar'}</Text>
       )}
 
-      {/* Effects — single-select toggle; RÁPIDO/LENTO change playback speed */}
+      {/* Spacer pushes effects+name+buttons toward bottom */}
+      <View style={{ flex: 1 }} />
+
+      {/* Effects — all 4 selectable; only fast/slow change playback speed */}
       <Text style={nStyles.sectionLabel}>Efeitos sonoros</Text>
       <View style={nStyles.effectsRow}>
         {EFFECTS.map(({ id, label }) => {
           const isActive = activeEffect === id;
-          const available = id === 'fast' || id === 'slow';
           return (
             <TouchableOpacity
               key={id}
-              style={[nStyles.effectChip, isActive && nStyles.effectChipActive, !available && nStyles.effectChipDim]}
-              onPress={isPreview && available ? () => setActiveEffect(isActive ? null : id) : undefined}
-              activeOpacity={isPreview && available ? 0.8 : 1}
+              style={[nStyles.effectChip, isActive && nStyles.effectChipActive]}
+              onPress={isPreview ? () => setActiveEffect(isActive ? null : id) : undefined}
+              activeOpacity={isPreview ? 0.8 : 1}
             >
               <Text style={[nStyles.effectLabel, isActive && nStyles.effectLabelActive]}>{label}</Text>
             </TouchableOpacity>
@@ -471,53 +480,52 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
 const nStyles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: '#000', paddingHorizontal: 20, paddingTop: 16 },
 
-  timer: { fontSize: 28, fontWeight: '200', color: '#FFF', letterSpacing: 3, textAlign: 'center', marginBottom: 12 },
+  timer: { fontSize: 26, fontWeight: '200', color: '#FFF', letterSpacing: 3, textAlign: 'center', marginBottom: 10 },
 
-  waveWrap: {
-    width: '100%', height: 72, borderRadius: 10,
-    backgroundColor: '#111', overflow: 'hidden', marginBottom: 4,
+  // waveOuter: overflow visible so brackets can extend outside rounded box
+  waveOuter: { width: '100%', height: WAVE_H + 8, marginBottom: 4, position: 'relative' },
+  waveWrap:  {
+    position: 'absolute', left: 0, right: 0, top: 4, height: WAVE_H,
+    borderRadius: 10, backgroundColor: '#111', overflow: 'hidden',
   },
-  barsRow: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, gap: 2,
-  },
+  barsRow:   { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, gap: 2 },
 
   dimOverlay: { position: 'absolute', top: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)' },
-  bracketV:   { position: 'absolute', top: 0, bottom: 0, width: BRACKET_W, backgroundColor: '#FFF' },
-  bracketH:   { position: 'absolute', height: BRACKET_W, width: BRACKET_CAP + BRACKET_W, backgroundColor: '#FFF' },
+  bracketV:   { position: 'absolute', top: 0, bottom: 0, width: BKT_W, backgroundColor: '#FFF' },
+  bracketH:   { position: 'absolute', height: BKT_W, width: BKT_CAP + BKT_W, backgroundColor: '#FFF' },
 
-  actionRow: { height: 64, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginBottom: 2 },
+  actionRow: { height: 60, flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
 
   startBtn: {
-    width: 58, height: 58, borderRadius: 29, backgroundColor: TEAL,
+    width: 56, height: 56, borderRadius: 28, backgroundColor: TEAL,
     alignItems: 'center', justifyContent: 'center',
   },
   stopBtn: {
-    width: 50, height: 50, borderRadius: 25, backgroundColor: '#EF4444',
+    width: 48, height: 48, borderRadius: 24, backgroundColor: '#EF4444',
     alignItems: 'center', justifyContent: 'center',
   },
-  stopSquare: { width: 18, height: 18, borderRadius: 3, backgroundColor: '#FFF' },
+  stopSquare:    { width: 16, height: 16, borderRadius: 3, backgroundColor: '#FFF' },
   circleBtn:     { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
   circlePrimary: { backgroundColor: TEAL },
   circleIcon:    { color: '#FFF', fontSize: 18, marginLeft: 2 },
 
-  hint: { fontSize: 12, color: 'rgba(255,255,255,0.4)', textAlign: 'center', marginBottom: 12 },
+  hint: { fontSize: 12, color: 'rgba(255,255,255,0.4)', textAlign: 'center', marginTop: 4 },
 
   sectionLabel: { fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.4)', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 },
-  effectsRow:   { flexDirection: 'row', gap: 8, marginBottom: 16 },
-  effectChip:        { flex: 1, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.08)', paddingVertical: 8, alignItems: 'center' },
+  effectsRow:   { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  effectChip:        { flex: 1, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.08)', paddingVertical: 9, alignItems: 'center' },
   effectChipActive:  { backgroundColor: TEAL },
-  effectChipDim:     { opacity: 0.35 },
-  effectLabel:       { fontSize: 11, fontWeight: '800', color: 'rgba(255,255,255,0.5)', letterSpacing: 0.5 },
+  effectLabel:       { fontSize: 11, fontWeight: '800', color: 'rgba(255,255,255,0.45)', letterSpacing: 0.5 },
   effectLabelActive: { color: '#FFF' },
 
   nameInput: {
     borderBottomWidth: 1.5, borderBottomColor: 'rgba(255,255,255,0.4)',
     paddingVertical: 8, fontSize: 16, color: '#FFF', fontWeight: '500',
-    backgroundColor: 'transparent', marginBottom: 16,
+    backgroundColor: 'transparent', marginBottom: 20,
   },
   errorText: { color: '#EF4444', fontSize: 13, textAlign: 'center', marginBottom: 8 },
 
-  ctaBar: { gap: 0 },
+  ctaBar: {},
   saveBtn:         { borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   saveBtnActive:   { backgroundColor: TEAL },
   saveBtnInactive: { backgroundColor: 'rgba(255,255,255,0.07)' },
@@ -526,8 +534,8 @@ const nStyles = StyleSheet.create({
   regravarBtnActive:   { borderWidth: 1.5, borderColor: '#FFF' },
   regravarBtnInactive: { borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.2)' },
   regravarText:        { fontSize: 14, fontWeight: '600', color: '#FFF', letterSpacing: 1.5 },
-  cancelLink:     { alignItems: 'center', paddingVertical: 10, marginTop: 2 },
-  cancelLinkText: { fontSize: 14, fontWeight: '400', color: '#FFF' },
+  cancelLink:     { alignItems: 'center', paddingVertical: 10, marginTop: 2, marginBottom: 8 },
+  cancelLinkText: { fontSize: 14, color: '#FFF' },
 });
 
 // ── Web recording component ───────────────────────────────────────────────────

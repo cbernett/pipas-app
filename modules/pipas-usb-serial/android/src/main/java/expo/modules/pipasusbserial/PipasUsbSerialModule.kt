@@ -144,6 +144,9 @@ class PipasUsbSerialModule : Module() {
         val p = port
         if (p != null) {
           try {
+            // Re-assert DTR/RTS so the board resumes transmitting
+            try { p.dtr = true } catch (_: Exception) {}
+            try { p.rts = true } catch (_: Exception) {}
             val listener = makeListener()
             val mgr = SerialInputOutputManager(p, listener)
             mgr.start()

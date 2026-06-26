@@ -162,19 +162,28 @@ export function MicIcon({ size = 26, color = '#FFF' }: { size?: number; color?: 
 const getPipasRecording = () => require('../../modules/pipas-recording').PipasRecording;
 const getPipasAudio     = () => require('../../modules/pipas-audio').PipasAudio;
 
-function NativeSoundRecorder({ onCancel, onSave }: Props) {
-  const [stage, setStage]       = useState<Stage>('idle');
-  const [seconds, setSeconds]   = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [soundName, setSoundName] = useState('Gravação 1');
-  const [error, setError]       = useState<string | null>(null);
-  const [ampBars, setAmpBars]   = useState<number[]>(Array(30).fill(0));
+const BAR_COUNT = 40;
 
-  const pulse       = useRef(new Animated.Value(1)).current;
-  const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
-  const ampPollRef  = useRef<ReturnType<typeof setInterval> | null>(null);
-  const filePathRef = useRef<string | null>(null);
-  const ampHistRef  = useRef<number[]>(Array(30).fill(0));
+function NativeSoundRecorder({ onCancel, onSave }: Props) {
+  const [stage, setStage]           = useState<Stage>('idle');
+  const [seconds, setSeconds]       = useState(0);
+  const [isPlaying, setIsPlaying]   = useState(false);
+  const [soundName, setSoundName]   = useState('Gravação 1');
+  const [error, setError]           = useState<string | null>(null);
+  const [ampBars, setAmpBars]       = useState<number[]>(Array(BAR_COUNT).fill(0));
+  const [frozenBars, setFrozenBars] = useState<number[]>(Array(BAR_COUNT).fill(0));
+  const [activeEffect, setActiveEffect] = useState<string | null>(null);
+  const [trimStartDisp, setTrimStartDisp] = useState(0);
+  const [trimEndDisp,   setTrimEndDisp]   = useState(1);
+
+  const pulse        = useRef(new Animated.Value(1)).current;
+  const timerRef     = useRef<ReturnType<typeof setInterval> | null>(null);
+  const ampPollRef   = useRef<ReturnType<typeof setInterval> | null>(null);
+  const filePathRef  = useRef<string | null>(null);
+  const ampHistRef   = useRef<number[]>(Array(BAR_COUNT).fill(0));
+  const trackWRef    = useRef(300);
+  const trimStartRef = useRef(0);
+  const trimEndRef   = useRef(1);
 
   // Timer + pulse + amplitude polling during recording
   useEffect(() => {
@@ -184,21 +193,19 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
         Animated.timing(pulse, { toValue: 1.1, duration: 700, useNativeDriver: true }),
         Animated.timing(pulse, { toValue: 1,   duration: 700, useNativeDriver: true }),
       ])).start();
-
-      // Poll amplitude every 100ms for live bar display
       ampPollRef.current = setInterval(() => {
-        const amp = getPipasRecording().getMaxAmplitude(); // 0–32767
+        const amp  = getPipasRecording().getMaxAmplitude();
         const norm = Math.min(1, amp / 20000);
         ampHistRef.current = [...ampHistRef.current.slice(1), norm];
         setAmpBars([...ampHistRef.current]);
       }, 100);
     } else {
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current)   clearInterval(timerRef.current);
       if (ampPollRef.current) clearInterval(ampPollRef.current);
       pulse.stopAnimation(); pulse.setValue(1);
     }
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current)   clearInterval(timerRef.current);
       if (ampPollRef.current) clearInterval(ampPollRef.current);
     };
   }, [stage]);
@@ -208,8 +215,11 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
 
   const startRecording = async () => {
     setError(null); setSeconds(0);
-    ampHistRef.current = Array(30).fill(0);
-    setAmpBars(Array(30).fill(0));
+    ampHistRef.current = Array(BAR_COUNT).fill(0);
+    setAmpBars(Array(BAR_COUNT).fill(0));
+    setActiveEffect(null);
+    trimStartRef.current = 0; trimEndRef.current = 1;
+    setTrimStartDisp(0); setTrimEndDisp(1);
     try {
       const granted = await PermissionsAndroid.request(
         PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
@@ -231,6 +241,7 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
     try {
       const path = await getPipasRecording().stopRecording();
       filePathRef.current = path;
+      setFrozenBars([...ampHistRef.current]);
       setStage('preview');
     } catch (e: any) {
       setError(e?.message ?? 'Erro ao parar gravação.');
@@ -258,8 +269,12 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
     setIsPlaying(false);
     setStage('idle'); setSeconds(0);
     filePathRef.current = null;
-    setAmpBars(Array(30).fill(0));
-    ampHistRef.current = Array(30).fill(0);
+    setAmpBars(Array(BAR_COUNT).fill(0));
+    setFrozenBars(Array(BAR_COUNT).fill(0));
+    ampHistRef.current = Array(BAR_COUNT).fill(0);
+    setActiveEffect(null);
+    trimStartRef.current = 0; trimEndRef.current = 1;
+    setTrimStartDisp(0); setTrimEndDisp(1);
   };
 
   const handleSave = () => {
@@ -268,40 +283,118 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
     onSave(soundName || 'Gravação', path);
   };
 
+  // Trim PanResponder for the native waveform
+  const dragWhichRef = useRef<'start' | 'end' | null>(null);
+  const trimPanResponder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder:  () => true,
+    onPanResponderGrant: (e) => {
+      const locationX = (e.nativeEvent as any).locationX ?? 0;
+      const width = trackWRef.current || 300;
+      const pos   = Math.max(0, Math.min(1, locationX / width));
+      dragWhichRef.current =
+        Math.abs(pos - trimStartRef.current) <= Math.abs(pos - trimEndRef.current) ? 'start' : 'end';
+    },
+    onPanResponderMove: (e) => {
+      const which = dragWhichRef.current; if (!which) return;
+      const pageX: number = (e.nativeEvent as any).pageX ?? 0;
+      // approximate position from pageX — use layout offset stored on grant
+      const width = trackWRef.current || 300;
+      const locationX = (e.nativeEvent as any).locationX ?? 0;
+      const p = Math.max(0, Math.min(1, locationX / width));
+      if (which === 'start') {
+        trimStartRef.current = Math.min(p, trimEndRef.current - 0.04);
+        setTrimStartDisp(trimStartRef.current);
+      } else {
+        trimEndRef.current = Math.max(p, trimStartRef.current + 0.04);
+        setTrimEndDisp(trimEndRef.current);
+      }
+    },
+    onPanResponderRelease: () => { dragWhichRef.current = null; },
+    onPanResponderTerminate: () => { dragWhichRef.current = null; },
+  }), []);
+
   const isIdle      = stage === 'idle';
   const isRecording = stage === 'recording';
   const isPreview   = stage === 'preview';
 
+  const displayBars = isPreview ? frozenBars : ampBars;
+
   return (
     <View style={styles.outerWrap}>
-      <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, { gap: 24 }]} keyboardShouldPersistTaps="handled">
+      <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, { gap: 20 }]} keyboardShouldPersistTaps="handled">
 
         {/* Timer */}
         <View style={styles.timerRow}>
           <Text style={styles.timerText}>{fmt(seconds)}</Text>
         </View>
 
-        {/* Amplitude bars (visible during recording) */}
-        <View style={[styles.eqWrap, { height: 100, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, gap: 2 }]}>
-          {ampBars.map((v, i) => {
-            const h = Math.max(4, v * 80);
-            return (
-              <View key={i} style={{
-                flex: 1, height: h, borderRadius: 2,
-                backgroundColor: isRecording ? `rgba(91,196,209,${0.3 + v * 0.7})` : 'rgba(255,255,255,0.08)',
+        {/* Waveform / amplitude bars */}
+        <View
+          style={[styles.eqWrap, { height: TRACK_H, position: 'relative' }]}
+          onLayout={e => { trackWRef.current = e.nativeEvent.layout.width; }}
+        >
+          {/* Bars */}
+          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, gap: 2 }}>
+            {displayBars.map((v, i) => {
+              // dim bars outside trim region in preview
+              const barPos = i / BAR_COUNT;
+              const inTrim = !isPreview || (barPos >= trimStartDisp && barPos <= trimEndDisp);
+              const h = Math.max(4, v * 80);
+              return (
+                <View key={i} style={{
+                  flex: 1, height: h, borderRadius: 2,
+                  backgroundColor: isRecording
+                    ? `rgba(91,196,209,${0.3 + v * 0.7})`
+                    : inTrim
+                      ? `rgba(91,196,209,${0.3 + v * 0.7})`
+                      : 'rgba(255,255,255,0.08)',
+                }} />
+              );
+            })}
+          </View>
+
+          {/* Trim overlays + handles (preview only) */}
+          {isPreview && (
+            <View style={StyleSheet.absoluteFillObject} {...trimPanResponder.panHandlers}>
+              {/* Left dark overlay */}
+              <View style={{
+                position: 'absolute', top: 0, bottom: 0, left: 0,
+                width: `${trimStartDisp * 100}%`,
+                backgroundColor: 'rgba(0,0,0,0.55)',
               }} />
-            );
-          })}
+              {/* Right dark overlay */}
+              <View style={{
+                position: 'absolute', top: 0, bottom: 0, right: 0,
+                width: `${(1 - trimEndDisp) * 100}%`,
+                backgroundColor: 'rgba(0,0,0,0.55)',
+              }} />
+              {/* Left bracket */}
+              <View style={{
+                position: 'absolute', top: 0, bottom: 0,
+                left: `${trimStartDisp * 100}%` as any,
+                width: BRACKET_W, backgroundColor: '#FFF',
+              }} />
+              <View style={{ position: 'absolute', top: 0, left: `${trimStartDisp * 100}%` as any, height: BRACKET_W, width: BRACKET_CAP + BRACKET_W, backgroundColor: '#FFF' }} />
+              <View style={{ position: 'absolute', bottom: 0, left: `${trimStartDisp * 100}%` as any, height: BRACKET_W, width: BRACKET_CAP + BRACKET_W, backgroundColor: '#FFF' }} />
+              {/* Right bracket */}
+              <View style={{
+                position: 'absolute', top: 0, bottom: 0,
+                left: `${trimEndDisp * 100}%` as any,
+                width: BRACKET_W, backgroundColor: '#FFF',
+              }} />
+              <View style={{ position: 'absolute', top: 0, left: `${trimEndDisp * 100 - (BRACKET_CAP / (trackWRef.current || 300)) * 100}%` as any, height: BRACKET_W, width: BRACKET_CAP + BRACKET_W, backgroundColor: '#FFF' }} />
+              <View style={{ position: 'absolute', bottom: 0, left: `${trimEndDisp * 100 - (BRACKET_CAP / (trackWRef.current || 300)) * 100}%` as any, height: BRACKET_W, width: BRACKET_CAP + BRACKET_W, backgroundColor: '#FFF' }} />
+            </View>
+          )}
         </View>
 
         {/* Action buttons */}
         <View style={styles.actionRow}>
           {isPreview ? (
-            <>
-              <TouchableOpacity style={[styles.circleBtn, styles.circlePrimary]} onPress={togglePlay}>
-                <Text style={styles.circleIcon}>{isPlaying ? '■' : '▶'}</Text>
-              </TouchableOpacity>
-            </>
+            <TouchableOpacity style={[styles.circleBtn, styles.circlePrimary]} onPress={togglePlay}>
+              <Text style={styles.circleIcon}>{isPlaying ? '■' : '▶'}</Text>
+            </TouchableOpacity>
           ) : isRecording ? (
             <Animated.View style={{ transform: [{ scale: pulse }] }}>
               <TouchableOpacity style={styles.stopBtn} onPress={stopRecording} activeOpacity={0.85}>
@@ -318,6 +411,26 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
         {(isIdle || isRecording) && (
           <Text style={styles.hint}>{isIdle ? 'Toque para gravar' : 'Toque para parar'}</Text>
         )}
+
+        {/* Effects */}
+        <Text style={styles.sectionLabel}>Efeitos sonoros</Text>
+        <View style={styles.effectsRow}>
+          {EFFECTS.map(({ id, label }) => {
+            const isActive = activeEffect === id;
+            return (
+              <TouchableOpacity
+                key={id}
+                style={[styles.effectChip, isPreview && isActive && styles.effectChipActive]}
+                onPress={isPreview ? () => setActiveEffect(isActive ? null : id) : undefined}
+                activeOpacity={isPreview ? 0.8 : 1}
+              >
+                <Text style={[styles.effectLabel, isPreview && isActive && styles.effectLabelActive]}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
 
         {/* Name input */}
         <TextInput

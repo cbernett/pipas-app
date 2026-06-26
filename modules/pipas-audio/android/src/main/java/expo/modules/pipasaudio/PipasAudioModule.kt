@@ -1,6 +1,8 @@
 package expo.modules.pipasaudio
 
 import android.media.MediaPlayer
+import android.os.Handler
+import android.os.Looper
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
@@ -58,6 +60,35 @@ class PipasAudioModule : Module() {
         player.setOnCompletionListener { it.release(); players.remove(key) }
         players[key] = player
         player.start()
+        promise.resolve(null)
+      } catch (e: Exception) {
+        promise.reject("PLAY_ERROR", e.message ?: "Erro ao tocar arquivo", e)
+      }
+    }
+
+    AsyncFunction("playFileWithEcho") { path: String, promise: expo.modules.kotlin.Promise ->
+      try {
+        val key = "__file__$path"
+        players[key]?.let { try { it.stop(); it.release() } catch (_: Exception) {} }
+        val player = MediaPlayer()
+        player.setDataSource(path)
+        player.prepare()
+        player.setOnCompletionListener { it.release(); players.remove(key) }
+        players[key] = player
+        player.start()
+        // Delayed echo: replay at 40% volume after 280ms
+        Handler(Looper.getMainLooper()).postDelayed({
+          try {
+            val echoKey = "__echo__$path"
+            val echo = MediaPlayer()
+            echo.setDataSource(path)
+            echo.prepare()
+            echo.setVolume(0.4f, 0.4f)
+            echo.setOnCompletionListener { it.release(); players.remove(echoKey) }
+            players[echoKey] = echo
+            echo.start()
+          } catch (_: Exception) {}
+        }, 280)
         promise.resolve(null)
       } catch (e: Exception) {
         promise.reject("PLAY_ERROR", e.message ?: "Erro ao tocar arquivo", e)

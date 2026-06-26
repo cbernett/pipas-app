@@ -45,6 +45,14 @@ class PipasUsbSerialModule : Module() {
 
     AsyncFunction("connect") { baudRate: Int, promise: expo.modules.kotlin.Promise ->
       try {
+        // Clean up any stale state from a previous connection
+        try { ioManager?.stop() } catch (_: Exception) {}
+        try { port?.close() } catch (_: Exception) {}
+        ioManager = null; port = null
+        // Unregister any pending permission receiver
+        permissionReceiver?.let { try { context.unregisterReceiver(it) } catch (_: Exception) {} }
+        permissionReceiver = null
+
         val manager = context.getSystemService(Context.USB_SERVICE) as UsbManager
         // Try default prober first (FTDI, CH340, CP210x, PL2303, CDC)
         var drivers: List<UsbSerialDriver> = UsbSerialProber.getDefaultProber().findAllDrivers(manager)
@@ -58,7 +66,7 @@ class PipasUsbSerialModule : Module() {
         }
         val driver = drivers.firstOrNull()
         if (driver == null) {
-          promise.reject("NO_DEVICE", "Nenhuma placa USB encontrada", null)
+          promise.reject("NO_DEVICE", "Nenhuma placa USB encontrada. Conecte a placa e tente novamente.", null)
           return@AsyncFunction
         }
         val device: UsbDevice = driver.device

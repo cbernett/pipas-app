@@ -270,9 +270,14 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
       setIsPlaying(true);
       const eff   = activeEffectRef.current;
       const speed = eff ? (EFFECT_SPEEDS[eff] ?? 1) : 1;
-      const playFn = speed !== 1
-        ? getPipasAudio().playFileAtSpeed(path, speed)
-        : getPipasAudio().playFile(path);
+      let playFn: Promise<void>;
+      if (eff === 'echo') {
+        playFn = getPipasAudio().playFileWithEcho(path);
+      } else if (speed !== 1) {
+        playFn = getPipasAudio().playFileAtSpeed(path, speed);
+      } else {
+        playFn = getPipasAudio().playFile(path);
+      }
       playFn.catch(() => {}).finally(() => setIsPlaying(false));
     }
   };
@@ -345,13 +350,13 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
       {/* Timer */}
       <Text style={nStyles.timer}>{fmt(seconds)}</Text>
 
-      {/* Waveform container — overflow visible so brackets are never clipped */}
-      <View style={nStyles.waveOuter}>
-        {/* Bars (clipped to rounded box) */}
-        <View
-          style={nStyles.waveWrap}
-          onLayout={e => setTrackW(e.nativeEvent.layout.width)}
-        >
+      {/* Waveform — clipped inner box + unclipped bracket overlay */}
+      <View
+        style={nStyles.waveOuter}
+        onLayout={e => setTrackW(e.nativeEvent.layout.width)}
+      >
+        {/* Bars + dim overlays — clipped to rounded rect */}
+        <View style={nStyles.waveWrap}>
           <View style={nStyles.barsRow}>
             {displayBars.map((v, i) => {
               const barPos = i / BAR_COUNT;
@@ -369,8 +374,6 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
               );
             })}
           </View>
-
-          {/* Dim overlays inside clipped box */}
           {isPreview && (
             <>
               <View style={[nStyles.dimOverlay, { left: 0, width: Math.max(0, startPx) }]} />
@@ -379,20 +382,25 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
           )}
         </View>
 
-        {/* Bracket handles — outside clipped box, absolutely on waveOuter */}
+        {/* Bracket handles — on top of waveOuter, NOT inside overflow:hidden */}
         {isPreview && (
-          <View style={StyleSheet.absoluteFillObject} {...trimPanResponder.panHandlers}>
-            {/* Left bracket */}
-            <View style={[nStyles.bracketV, { left: startPx - BKT_W / 2 }]} />
-            <View style={[nStyles.bracketH, { left: startPx - BKT_W / 2, top: 0 }]} />
-            <View style={[nStyles.bracketH, { left: startPx - BKT_W / 2, bottom: 0 }]} />
-            {/* Right bracket */}
-            <View style={[nStyles.bracketV, { left: endPx - BKT_W / 2 }]} />
-            <View style={[nStyles.bracketH, { left: endPx - BKT_CAP - BKT_W / 2, top: 0 }]} />
-            <View style={[nStyles.bracketH, { left: endPx - BKT_CAP - BKT_W / 2, bottom: 0 }]} />
+          <View style={[StyleSheet.absoluteFillObject, { zIndex: 10 }]} {...trimPanResponder.panHandlers}>
+            {/* Left bracket vertical bar */}
+            <View style={[nStyles.bracketV, { left: startPx - Math.floor(BKT_W / 2) }]} />
+            {/* Left bracket top & bottom caps (extend right) */}
+            <View style={[nStyles.bracketH, { left: startPx - Math.floor(BKT_W / 2), top: 0 }]} />
+            <View style={[nStyles.bracketH, { left: startPx - Math.floor(BKT_W / 2), bottom: 0 }]} />
+            {/* Right bracket vertical bar */}
+            <View style={[nStyles.bracketV, { left: endPx - Math.ceil(BKT_W / 2) }]} />
+            {/* Right bracket top & bottom caps (extend left) */}
+            <View style={[nStyles.bracketH, { left: endPx - BKT_CAP - Math.ceil(BKT_W / 2), top: 0 }]} />
+            <View style={[nStyles.bracketH, { left: endPx - BKT_CAP - Math.ceil(BKT_W / 2), bottom: 0 }]} />
           </View>
         )}
       </View>
+
+      {/* Equal flex space above and below the play/record button */}
+      <View style={{ flex: 1 }} />
 
       {/* Record / Stop / Play button */}
       <View style={nStyles.actionRow}>
@@ -417,10 +425,10 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
         <Text style={nStyles.hint}>{isIdle ? 'Toque para gravar' : 'Toque para parar'}</Text>
       )}
 
-      {/* Spacer pushes effects+name+buttons toward bottom */}
+      {/* Equal spacer above and below play button — flex fills remaining space and splits it */}
       <View style={{ flex: 1 }} />
 
-      {/* Effects — all 4 selectable; only fast/slow change playback speed */}
+      {/* Effects — all 4 selectable; fast/slow change speed, echo plays twice */}
       <Text style={nStyles.sectionLabel}>Efeitos sonoros</Text>
       <View style={nStyles.effectsRow}>
         {EFFECTS.map(({ id, label }) => {
@@ -482,10 +490,11 @@ const nStyles = StyleSheet.create({
 
   timer: { fontSize: 26, fontWeight: '200', color: '#FFF', letterSpacing: 3, textAlign: 'center', marginBottom: 10 },
 
-  // waveOuter: overflow visible so brackets can extend outside rounded box
-  waveOuter: { width: '100%', height: WAVE_H + 8, marginBottom: 4, position: 'relative' },
+  // waveOuter: no overflow clipping so brackets are never cut off
+  waveOuter: { width: '100%', height: WAVE_H, marginBottom: 16 },
+  // waveWrap: clips the bars and dim overlays to rounded rect
   waveWrap:  {
-    position: 'absolute', left: 0, right: 0, top: 4, height: WAVE_H,
+    ...StyleSheet.absoluteFillObject,
     borderRadius: 10, backgroundColor: '#111', overflow: 'hidden',
   },
   barsRow:   { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, gap: 2 },
@@ -521,7 +530,7 @@ const nStyles = StyleSheet.create({
   nameInput: {
     borderBottomWidth: 1.5, borderBottomColor: 'rgba(255,255,255,0.4)',
     paddingVertical: 8, fontSize: 16, color: '#FFF', fontWeight: '500',
-    backgroundColor: 'transparent', marginBottom: 20,
+    backgroundColor: 'transparent', marginBottom: 32,
   },
   errorText: { color: '#EF4444', fontSize: 13, textAlign: 'center', marginBottom: 8 },
 

@@ -12,6 +12,9 @@ export const PipasAudio = {
   playFileAtSpeed(path: string, speed: number): Promise<void> {
     return NativeModule.playFileAtSpeed(path, speed);
   },
+  playFileWithEcho(path: string): Promise<void> {
+    return NativeModule.playFileWithEcho(path);
+  },
   stopFile(path: string): Promise<void> {
     return NativeModule.stopFile(path);
   },

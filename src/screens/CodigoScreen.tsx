@@ -1,8 +1,26 @@
 import React from 'react';
-import { View, Text, StyleSheet, Platform, Animated, useAnimatedValue } from 'react-native';
+import { View, Text, StyleSheet, Platform, Animated, ScrollView } from 'react-native';
 import Workspace from '../components/Workspace';
 import BlockLibraryBottomSheet from '../components/BlockLibraryBottomSheet';
 import { useApp } from '../context/AppContext';
+
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
+  state = { error: null };
+  static getDerivedStateFromError(e: Error) { return { error: e }; }
+  render() {
+    if (this.state.error) {
+      const e = this.state.error as Error;
+      return (
+        <ScrollView style={{ flex: 1, backgroundColor: '#1a0000', padding: 20 }}>
+          <Text style={{ color: '#ff4444', fontSize: 16, fontWeight: '700', marginBottom: 8 }}>CRASH CAUGHT</Text>
+          <Text style={{ color: '#fff', fontSize: 13, marginBottom: 8 }}>{e.message}</Text>
+          <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11 }}>{e.stack}</Text>
+        </ScrollView>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 function BoardWarningToast({ message }: { message: string | null }) {
   const opacity = React.useRef(new Animated.Value(0)).current;
@@ -32,13 +50,15 @@ export default function CodigoScreen() {
   const { boardWarning } = useApp();
 
   return (
-    <View style={styles.container}>
-      <View style={styles.workspaceArea}>
-        <Workspace />
+    <ErrorBoundary>
+      <View style={styles.container}>
+        <View style={styles.workspaceArea}>
+          <Workspace />
+        </View>
+        <BlockLibraryBottomSheet />
+        <BoardWarningToast message={boardWarning} />
       </View>
-      <BlockLibraryBottomSheet />
-      <BoardWarningToast message={boardWarning} />
-    </View>
+    </ErrorBoundary>
   );
 }
 

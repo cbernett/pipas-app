@@ -12,7 +12,7 @@ export default function AppHeader() {
     <View style={styles.container}>
       {Platform.OS !== 'web' && (
         <View style={{ backgroundColor: '#5BC4D1', paddingVertical: 2, alignItems: 'center' }}>
-          <Text style={{ color: '#000', fontSize: 10, fontWeight: '700' }}>BUILD v19 — 24 JUN</Text>
+          <Text style={{ color: '#000', fontSize: 10, fontWeight: '700' }}>BUILD v20 — 24 JUN</Text>
         </View>
       )}
       <View style={[styles.row, { paddingTop: Math.max(insets.top, 10) + 10 }]}>

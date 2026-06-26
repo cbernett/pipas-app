@@ -8,6 +8,8 @@ import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import com.hoho.android.usbserial.driver.CdcAcmSerialDriver
 import com.hoho.android.usbserial.driver.ProbeTable
 import com.hoho.android.usbserial.driver.UsbSerialDriver
@@ -18,16 +20,17 @@ import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
 private const val ACTION_USB_PERMISSION = "expo.modules.pipasusbserial.USB_PERMISSION"
+private const val RECONNECT_DELAY_MS    = 1500L
+private const val MAX_RECONNECT_TRIES   = 3
 
-/**
- * Mirrors the subset of the Web Serial API used by src/serial.ts
- * (connect / disconnect / write / onData / onDisconnect), so the JS
- * side can branch on Platform.OS without changing the protocol logic.
- */
 class PipasUsbSerialModule : Module() {
   private var port: UsbSerialPort? = null
   private var ioManager: SerialInputOutputManager? = null
   private var permissionReceiver: BroadcastReceiver? = null
+  private var lastBaud = 115200
+  private var reconnectTries = 0
+  private var intentionalDisconnect = false
+  private val handler = Handler(Looper.getMainLooper())
 
   private val context: Context
     get() = appContext.reactContext ?: throw IllegalStateException("No context available")
@@ -37,7 +40,6 @@ class PipasUsbSerialModule : Module() {
 
     Events("onData", "onDisconnect", "onError")
 
-    // True if any USB device is attached (not just ones with known VID/PIDs).
     Function("isSupported") {
       val manager = context.getSystemService(Context.USB_SERVICE) as UsbManager
       manager.deviceList.isNotEmpty()
@@ -45,48 +47,28 @@ class PipasUsbSerialModule : Module() {
 
     AsyncFunction("connect") { baudRate: Int, promise: expo.modules.kotlin.Promise ->
       try {
-        // Clean up any stale state from a previous connection
+        intentionalDisconnect = false
+        reconnectTries = 0
+        // Clean up stale state
         try { ioManager?.stop() } catch (_: Exception) {}
         try { port?.close() } catch (_: Exception) {}
         ioManager = null; port = null
-        // Unregister any pending permission receiver
         permissionReceiver?.let { try { context.unregisterReceiver(it) } catch (_: Exception) {} }
         permissionReceiver = null
+        lastBaud = baudRate
 
-        val manager = context.getSystemService(Context.USB_SERVICE) as UsbManager
-        // Try default prober first (FTDI, CH340, CP210x, PL2303, CDC)
-        var drivers: List<UsbSerialDriver> = UsbSerialProber.getDefaultProber().findAllDrivers(manager)
-        // Fallback: wrap every attached device as CdcAcm (covers Arduino, Adafruit, etc.)
-        if (drivers.isEmpty()) {
-          val customTable = ProbeTable()
-          for (dev in manager.deviceList.values) {
-            customTable.addProduct(dev.vendorId, dev.productId, CdcAcmSerialDriver::class.java)
-          }
-          drivers = UsbSerialProber(customTable).findAllDrivers(manager)
-        }
-        val driver = drivers.firstOrNull()
-        if (driver == null) {
-          promise.reject("NO_DEVICE", "Nenhuma placa USB encontrada. Conecte a placa e tente novamente.", null)
-          return@AsyncFunction
-        }
-        val device: UsbDevice = driver.device
-
-        if (!manager.hasPermission(device)) {
-          requestPermissionThenOpen(manager, driver, baudRate, promise)
-        } else {
-          openPort(manager, driver, baudRate, promise)
-        }
+        findAndOpen(baudRate, promise)
       } catch (e: Exception) {
         promise.reject("CONNECT_ERROR", e.message ?: "Erro ao conectar", e)
       }
     }
 
     AsyncFunction("disconnect") { promise: expo.modules.kotlin.Promise ->
+      intentionalDisconnect = true
+      handler.removeCallbacksAndMessages(null)
       try {
-        ioManager?.stop()
-        ioManager = null
-        port?.close()
-        port = null
+        ioManager?.stop(); ioManager = null
+        port?.close();     port = null
         promise.resolve(null)
       } catch (e: Exception) {
         promise.reject("DISCONNECT_ERROR", e.message ?: "Erro ao desconectar", e)
@@ -109,6 +91,89 @@ class PipasUsbSerialModule : Module() {
     }
   }
 
+  // Finds the first available driver and opens the port (or requests permission first).
+  private fun findAndOpen(baudRate: Int, promise: expo.modules.kotlin.Promise?) {
+    val manager = context.getSystemService(Context.USB_SERVICE) as UsbManager
+    var drivers = UsbSerialProber.getDefaultProber().findAllDrivers(manager)
+    if (drivers.isEmpty()) {
+      val table = ProbeTable()
+      for (dev in manager.deviceList.values) {
+        table.addProduct(dev.vendorId, dev.productId, CdcAcmSerialDriver::class.java)
+      }
+      drivers = UsbSerialProber(table).findAllDrivers(manager)
+    }
+    val driver = drivers.firstOrNull()
+    if (driver == null) {
+      promise?.reject("NO_DEVICE", "Nenhuma placa USB encontrada. Conecte a placa e tente novamente.", null)
+        ?: run { sendEvent("onDisconnect", mapOf("reason" to "device not found after reconnect")) }
+      return
+    }
+    if (!manager.hasPermission(driver.device)) {
+      if (promise != null) {
+        requestPermissionThenOpen(manager, driver, baudRate, promise)
+      } else {
+        // During auto-reconnect Android should still have permission; if not, give up.
+        sendEvent("onDisconnect", mapOf("reason" to "permission lost"))
+      }
+    } else {
+      openPort(manager, driver, baudRate, promise)
+    }
+  }
+
+  // Called when the IO thread dies. Tries to silently reopen the port up to MAX_RECONNECT_TRIES
+  // times before notifying JS that the connection is truly gone.
+  private fun handleRunError(reason: String) {
+    if (intentionalDisconnect) return
+
+    try { ioManager?.stop() } catch (_: Exception) {}
+    ioManager = null
+    // Don't close port yet — we'll try to reuse the connection.
+
+    if (reconnectTries >= MAX_RECONNECT_TRIES) {
+      port = null
+      reconnectTries = 0
+      sendEvent("onDisconnect", mapOf("reason" to reason))
+      return
+    }
+
+    reconnectTries++
+    handler.postDelayed({
+      if (intentionalDisconnect) return@postDelayed
+      try {
+        // Try to restart IO on the existing port first (fastest path — covers MCU reboot)
+        val p = port
+        if (p != null) {
+          try {
+            val listener = makeListener()
+            val mgr = SerialInputOutputManager(p, listener)
+            mgr.start()
+            ioManager = mgr
+            reconnectTries = 0
+            return@postDelayed
+          } catch (_: Exception) {
+            try { port?.close() } catch (_: Exception) {}
+            port = null
+          }
+        }
+        // Port is gone — do a full re-open
+        findAndOpen(lastBaud, null)
+      } catch (_: Exception) {
+        handleRunError("reconnect failed")
+      }
+    }, RECONNECT_DELAY_MS)
+  }
+
+  private fun makeListener() = object : SerialInputOutputManager.Listener {
+    override fun onNewData(data: ByteArray) {
+      reconnectTries = 0 // data flowing = connection healthy
+      val ints = data.map { (it.toInt() and 0xFF) }
+      sendEvent("onData", mapOf("bytes" to ints))
+    }
+    override fun onRunError(e: Exception) {
+      handleRunError(e.message ?: "io error")
+    }
+  }
+
   private fun requestPermissionThenOpen(
     manager: UsbManager,
     driver: UsbSerialDriver,
@@ -117,8 +182,7 @@ class PipasUsbSerialModule : Module() {
   ) {
     val explicitIntent = Intent(ACTION_USB_PERMISSION).apply { setPackage(context.packageName) }
     val permissionIntent = PendingIntent.getBroadcast(
-      context, 0, explicitIntent,
-      PendingIntent.FLAG_IMMUTABLE
+      context, 0, explicitIntent, PendingIntent.FLAG_IMMUTABLE
     )
     val receiver = object : BroadcastReceiver() {
       override fun onReceive(ctx: Context, intent: Intent) {
@@ -126,11 +190,8 @@ class PipasUsbSerialModule : Module() {
           context.unregisterReceiver(this)
           permissionReceiver = null
           val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
-          if (granted) {
-            openPort(manager, driver, baudRate, promise)
-          } else {
-            promise.reject("PERMISSION_DENIED", "Permissão USB negada", null)
-          }
+          if (granted) openPort(manager, driver, baudRate, promise)
+          else promise.reject("PERMISSION_DENIED", "Permissão USB negada", null)
         }
       }
     }
@@ -147,37 +208,30 @@ class PipasUsbSerialModule : Module() {
     manager: UsbManager,
     driver: UsbSerialDriver,
     baudRate: Int,
-    promise: expo.modules.kotlin.Promise
+    promise: expo.modules.kotlin.Promise?
   ) {
     try {
       val connection = manager.openDevice(driver.device)
       if (connection == null) {
-        promise.reject("OPEN_ERROR", "Não foi possível abrir a conexão USB", null)
+        promise?.reject("OPEN_ERROR", "Não foi possível abrir a conexão USB", null)
+          ?: sendEvent("onDisconnect", mapOf("reason" to "could not open device"))
         return
       }
       val p = driver.ports[0]
       p.open(connection)
       p.setParameters(baudRate, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE)
-      // DTR/RTS signals some boards to start transmitting
       try { p.dtr = true } catch (_: Exception) {}
       try { p.rts = true } catch (_: Exception) {}
       port = p
 
-      val listener = object : SerialInputOutputManager.Listener {
-        override fun onNewData(data: ByteArray) {
-          val ints = data.map { (it.toInt() and 0xFF) }
-          sendEvent("onData", mapOf("bytes" to ints))
-        }
-        override fun onRunError(e: Exception) {
-          sendEvent("onDisconnect", mapOf("reason" to (e.message ?: "io error")))
-        }
-      }
-      ioManager = SerialInputOutputManager(p, listener)
-      ioManager!!.start()
+      val mgr = SerialInputOutputManager(p, makeListener())
+      mgr.start()
+      ioManager = mgr
 
-      promise.resolve(null)
+      promise?.resolve(null)
     } catch (e: Exception) {
-      promise.reject("OPEN_ERROR", e.message ?: "Erro ao abrir porta", e)
+      promise?.reject("OPEN_ERROR", e.message ?: "Erro ao abrir porta", e)
+        ?: handleRunError(e.message ?: "open failed")
     }
   }
 }

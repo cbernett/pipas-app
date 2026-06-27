@@ -104,7 +104,14 @@ class PipasBoardSerialNative {
   }
 
   private parseByte(n: number) {
-    // Protocol: board sends ASCII '0', '1', '2' for pad 1, 2, 3
+    // Protocol v2: board sends binary 0x00–0x02 for pad 1, 2, 3
+    if (n <= 0x02) {
+      const pad = n + 1;
+      this.emitRaw(`toque ${pad}`);
+      this.emitTouch(pad);
+      return;
+    }
+    // Protocol v1: board sends ASCII '0'–'2' for pad 1, 2, 3
     if (n >= 0x30 && n <= 0x32) {
       const pad = (n - 0x30) + 1;
       this.emitRaw(`toque ${pad}`);

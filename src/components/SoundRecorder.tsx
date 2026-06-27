@@ -273,6 +273,8 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
       let playFn: Promise<void>;
       if (eff === 'echo') {
         playFn = getPipasAudio().playFileWithEcho(path);
+      } else if (eff === 'robot') {
+        playFn = getPipasAudio().playFileWithRobot(path);
       } else if (speed !== 1) {
         playFn = getPipasAudio().playFileAtSpeed(path, speed);
       } else {
@@ -382,19 +384,14 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
           )}
         </View>
 
-        {/* Bracket handles — on top of waveOuter, NOT inside overflow:hidden */}
+        {/* Trim handles — invisible touch zones + thin line indicators */}
         {isPreview && (
-          <View style={[StyleSheet.absoluteFillObject, { zIndex: 10 }]} {...trimPanResponder.panHandlers}>
-            {/* Left bracket vertical bar */}
-            <View style={[nStyles.bracketV, { left: startPx - Math.floor(BKT_W / 2) }]} />
-            {/* Left bracket top & bottom caps (extend right) */}
-            <View style={[nStyles.bracketH, { left: startPx - Math.floor(BKT_W / 2), top: 0 }]} />
-            <View style={[nStyles.bracketH, { left: startPx - Math.floor(BKT_W / 2), bottom: 0 }]} />
-            {/* Right bracket vertical bar */}
-            <View style={[nStyles.bracketV, { left: endPx - Math.ceil(BKT_W / 2) }]} />
-            {/* Right bracket top & bottom caps (extend left) */}
-            <View style={[nStyles.bracketH, { left: endPx - BKT_CAP - Math.ceil(BKT_W / 2), top: 0 }]} />
-            <View style={[nStyles.bracketH, { left: endPx - BKT_CAP - Math.ceil(BKT_W / 2), bottom: 0 }]} />
+          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10 }}
+                {...trimPanResponder.panHandlers}>
+            {/* Left trim line */}
+            <View style={{ position: 'absolute', top: 0, bottom: 0, left: startPx - 1, width: 2, backgroundColor: 'rgba(255,255,255,0.7)', borderRadius: 1 }} />
+            {/* Right trim line */}
+            <View style={{ position: 'absolute', top: 0, bottom: 0, left: endPx - 1, width: 2, backgroundColor: 'rgba(255,255,255,0.7)', borderRadius: 1 }} />
           </View>
         )}
       </View>
@@ -494,10 +491,10 @@ const nStyles = StyleSheet.create({
   waveOuter: { width: '100%', height: WAVE_H, marginBottom: 16 },
   // waveWrap: clips the bars and dim overlays to rounded rect
   waveWrap:  {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     borderRadius: 10, backgroundColor: '#111', overflow: 'hidden',
   },
-  barsRow:   { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, gap: 2 },
+  barsRow:   { height: WAVE_H, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, gap: 2 },
 
   dimOverlay: { position: 'absolute', top: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)' },
   bracketV:   { position: 'absolute', top: 0, bottom: 0, width: BKT_W, backgroundColor: '#FFF' },

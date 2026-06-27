@@ -26,7 +26,7 @@ function NativeStackDragger({
   onDragEnd: (id: string, x: number, y: number, touchedY: number, screenY: number) => void;
   onDragMove: (canvasX: number, canvasY: number, screenY: number) => void;
   onTap: (touchedY: number) => void;
-  onSplitStart: (stackId: string, touchedY: number) => { startX: number; startY: number } | null;
+  onSplitStart: (stackId: string, touchedY: number) => { x: number; y: number } | null;
   onSplitCancel: (stackId: string) => void;
   splitOverlayX: Animated.Value;
   splitOverlayY: Animated.Value;
@@ -57,37 +57,31 @@ function NativeStackDragger({
   }, [stack.id]);
 
   const responder = useRef(PanResponder.create({
-    // Capture initial touch Y at first touch (pre-movement). This fires even when
-    // we return false, giving us the original press location before any drift.
+    // Claim immediately so RNGHR TouchableOpacity inside blocks doesn't steal the
+    // gesture before we can detect a drag. Taps are handled manually in onRelease.
     onStartShouldSetPanResponder: (e) => {
-      initialTouchY.current = e.nativeEvent.locationY;
-      return false;
+      initialTouchY.current = e.nativeEvent.locationY ?? 0;
+      return true;
     },
-    onMoveShouldSetPanResponder: (e, g) => {
-      // Refine touch Y estimate: subtract accumulated dy from current locationY
-      // so we approximate the original contact point (more reliable on some devices).
-      if (initialTouchY.current === 0) {
-        initialTouchY.current = Math.max(0, e.nativeEvent.locationY - g.dy);
-      }
-      return Math.abs(g.dx) > 6 || Math.abs(g.dy) > 6;
-    },
+    onMoveShouldSetPanResponder: () => true,
     onPanResponderGrant: () => {
       didMove.current = false;
       usingSplitOverlay.current = false;
       splitStartPos.current = null;
-
-      // Try to split the stack at the touched block index
-      const split = onSplitStartRef.current(stackIdRef.current, initialTouchY.current);
-      if (split) {
-        // Split happened — drive the overlay; our own stack (top portion) stays put
-        usingSplitOverlay.current = true;
-        splitStartPos.current = split;
-      } else {
-        pan.extractOffset();
-      }
+      // Don't split yet — wait for actual movement so we can distinguish tap vs drag
     },
     onPanResponderMove: (e, g) => {
-      didMove.current = true;
+      if (!didMove.current) {
+        // First movement — decide split vs whole-stack drag
+        didMove.current = true;
+        const split = onSplitStartRef.current(stackIdRef.current, initialTouchY.current);
+        if (split) {
+          usingSplitOverlay.current = true;
+          splitStartPos.current = split;
+        } else {
+          pan.extractOffset();
+        }
+      }
       if (usingSplitOverlay.current && splitStartPos.current) {
         const nx = splitStartPos.current.x + g.dx;
         const ny = splitStartPos.current.y + g.dy;
@@ -139,6 +133,7 @@ function NativeStackDragger({
   );
 }
 import CodeBlock, { TAB_H, TAB_OFFSET } from './CodeBlock';
+import { nativeLibDrag } from './CategoryBand';
 
 
 const CANVAS_W   = 1200;
@@ -181,6 +176,12 @@ export default function Workspace() {
   const [nativeSplitOverlay, setNativeSplitOverlay] = useState<WorkspaceBlock[] | null>(null);
   const nativeSplitOverlayRef    = useRef<WorkspaceBlock[] | null>(null);
 
+  // ── Native library drag ghost (Android only) ────────────────────────────
+  const [nativeLibDragBlock, setNativeLibDragBlock] = useState<WorkspaceBlock | null>(null);
+  const nativeLibDragX = useRef(new Animated.Value(0)).current;
+  const nativeLibDragY = useRef(new Animated.Value(0)).current;
+  const nativeLibDragBlockRef = useRef<WorkspaceBlock | null>(null);
+
   // ── Refs (sync, no re-render needed) ───────────────────────────────────
   const localStacksRef  = useRef<BlockStack[]>(displayStacks);
   const draggingIdRef   = useRef<string | null>(null);
@@ -204,6 +205,7 @@ export default function Workspace() {
   const stackHeightsRef = useRef<Record<string, number>>({});          // total stack height
   const blockHeightsRef = useRef<Record<string, number[]>>({});        // [block heights] per stack
   const canvasRef       = useRef<any>(null);
+  const canvasPagePos   = useRef({ x: 0, y: 0 });
   const scrollOffset    = useRef({ x: 0, y: 0 });
   const addStackRef     = useRef(addStack);
   useEffect(() => { addStackRef.current = addStack; }, [addStack]);
@@ -212,13 +214,48 @@ export default function Workspace() {
   // so localStacksRef is always current by the time the user can interact.
   useLayoutEffect(() => { localStacksRef.current = displayStacks; }, [displayStacks]);
 
+  // ── Wire up native library drag bridge (Android only) ───────────────────
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    nativeLibDrag.onStart = (block, px, py) => {
+      nativeLibDragBlockRef.current = block;
+      nativeLibDragX.setValue(px - 60);
+      nativeLibDragY.setValue(py - 30);
+      setNativeLibDragBlock(block);
+    };
+    nativeLibDrag.onMove = (px, py) => {
+      nativeLibDragX.setValue(px - 60);
+      nativeLibDragY.setValue(py - 30);
+    };
+    nativeLibDrag.onEnd = (px, py) => {
+      const block = nativeLibDragBlockRef.current;
+      nativeLibDragBlockRef.current = null;
+      setNativeLibDragBlock(null);
+      if (!block) return;
+      const off = canvasPagePos.current;
+      const cx = px - off.x + scrollOffset.current.x - 60;
+      const cy = py - off.y + scrollOffset.current.y - 30;
+      setTimeout(() => addStackRef.current(block, Math.max(0, cx), Math.max(0, cy)), 0);
+    };
+    nativeLibDrag.onCancel = () => {
+      nativeLibDragBlockRef.current = null;
+      setNativeLibDragBlock(null);
+    };
+    return () => {
+      nativeLibDrag.onStart = null;
+      nativeLibDrag.onMove  = null;
+      nativeLibDrag.onEnd   = null;
+      nativeLibDrag.onCancel = null;
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Canvas offset helper ────────────────────────────────────────────────
   const canvasTopLeft = useCallback((): { x: number; y: number } => {
     if (canvasRef.current?.getBoundingClientRect) {
       const r = canvasRef.current.getBoundingClientRect();
       return { x: r.left, y: r.top };
     }
-    return { x: 0, y: 0 };
+    return canvasPagePos.current;
   }, []);
 
   // Convert clientXY → canvas coords (accounting for scroll)
@@ -361,7 +398,7 @@ export default function Workspace() {
   // ── Native split: immediately split a stack when drag starts on a non-first block ──
   // Called from NativeStackDragger.onPanResponderGrant. Returns the overlay start
   // position if a split happened, or null if the whole stack should be dragged.
-  const nativeSplitStart = useCallback((stackId: string, touchedYVal: number): { startX: number; startY: number } | null => {
+  const nativeSplitStart = useCallback((stackId: string, touchedYVal: number): { x: number; y: number } | null => {
     const stk = localStacksRef.current.find(s => s.id === stackId);
     if (!stk || stk.blocks.length <= 1) return null;
     const blockIdx = blockIdxAt(stackId, touchedYVal);
@@ -384,7 +421,7 @@ export default function Workspace() {
     nativeSplitOverlayRef.current = splitBlocks;
     setNativeSplitOverlay(splitBlocks);
 
-    return { startX: stk.x, startY: splitY };
+    return { x: stk.x, y: splitY };
   }, [blockIdxAt, accumHeight, setStacks, nativeSplitOverlayX, nativeSplitOverlayY]);
 
   // ── Stack hit test ───────────────────────────────────────────────────────
@@ -796,7 +833,15 @@ export default function Workspace() {
             (window as any).__workspaceScroll = { ...scrollOffset.current };
           }}
         >
-          <View ref={canvasRef} nativeID="workspace-canvas" style={styles.canvas}>
+          <View ref={canvasRef} nativeID="workspace-canvas" style={styles.canvas}
+            onLayout={() => {
+              if (Platform.OS !== 'web') {
+                canvasRef.current?.measure((_x: number, _y: number, _w: number, _h: number, pageX: number, pageY: number) => {
+                  canvasPagePos.current = { x: pageX, y: pageY };
+                });
+              }
+            }}
+          >
 
             {/* Guide message — hidden once first block is placed */}
             {stacks.length === 0 && (
@@ -969,6 +1014,16 @@ export default function Workspace() {
               }
               return stackContent;
             })}
+
+            {/* Native library drag ghost — follows finger while dragging from library */}
+            {Platform.OS !== 'web' && nativeLibDragBlock && (
+              <Animated.View
+                pointerEvents="none"
+                style={[styles.stackPos, { left: nativeLibDragX, top: nativeLibDragY, zIndex: 300, opacity: 0.85 }]}
+              >
+                <CodeBlock block={nativeLibDragBlock} isFirst isLast isDragging />
+              </Animated.View>
+            )}
 
             {/* Native split overlay — floats above everything while a mid-stack block is being dragged */}
             {Platform.OS !== 'web' && nativeSplitOverlay && (

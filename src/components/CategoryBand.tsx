@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Platform } from 'react-native';
+import { View, Text, StyleSheet, Platform, PanResponder } from 'react-native';
 import { TouchableOpacity } from 'react-native-gesture-handler';
 import { BlockDef, CATEGORY_COLORS, CATEGORY_DARK, BlockCategory } from '../data/blocks';
 import { useApp, WorkspaceBlock } from '../context/AppContext';
@@ -16,6 +16,14 @@ const DRAG_MIN = 8;
 
 // Tracks placement count so each tapped block lands in a different spot
 let nativePlaceCount = 0;
+
+// Module-level bridge so LibraryBlockItemNative can talk to Workspace drag layer
+export const nativeLibDrag = {
+  onStart: null as ((block: WorkspaceBlock, pageX: number, pageY: number) => void) | null,
+  onMove:  null as ((pageX: number, pageY: number) => void) | null,
+  onEnd:   null as ((pageX: number, pageY: number) => void) | null,
+  onCancel: null as (() => void) | null,
+};
 
 function LibraryBlockItemWeb({ block, addStack }: { block: BlockDef; addStack: (b: WorkspaceBlock, x?: number, y?: number) => void }) {
   const ref = useRef<View>(null);
@@ -95,6 +103,8 @@ function LibraryBlockItemWeb({ block, addStack }: { block: BlockDef; addStack: (
   );
 }
 
+const DRAG_THRESHOLD = 8;
+
 function LibraryBlockItemNative({ block, addStack }: { block: BlockDef; addStack: (b: WorkspaceBlock, x?: number, y?: number) => void }) {
   const wsBlock: WorkspaceBlock = {
     id: block.id,
@@ -105,22 +115,44 @@ function LibraryBlockItemNative({ block, addStack }: { block: BlockDef; addStack
   };
 
   const isBracket = ['ctrl_2', 'ctrl_3', 'ctrl_4', 'ctrl_5'].includes(block.id);
+  const dragging = useRef(false);
 
-  return (
-    <TouchableOpacity
-      style={styles.blockItem}
-      activeOpacity={0.7}
-      onPress={() => {
+  const responder = useRef(PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderGrant: () => { dragging.current = false; },
+    onPanResponderMove: (e, g) => {
+      if (!dragging.current && (Math.abs(g.dx) > DRAG_THRESHOLD || Math.abs(g.dy) > DRAG_THRESHOLD)) {
+        dragging.current = true;
+        nativeLibDrag.onStart?.(wsBlock, e.nativeEvent.pageX, e.nativeEvent.pageY);
+      } else if (dragging.current) {
+        nativeLibDrag.onMove?.(e.nativeEvent.pageX, e.nativeEvent.pageY);
+      }
+    },
+    onPanResponderRelease: (e, g) => {
+      if (dragging.current) {
+        dragging.current = false;
+        nativeLibDrag.onEnd?.(e.nativeEvent.pageX, e.nativeEvent.pageY);
+      } else {
+        // Tap — place at fixed offset
         const col = nativePlaceCount % 3;
         const row = Math.floor(nativePlaceCount / 3) % 4;
         nativePlaceCount++;
-        // Defer by one frame so the touch is fully released before a new
-        // NativeStackDragger (PanResponder) mounts — prevents Fabric crash.
         setTimeout(() => addStack(wsBlock, 20 + col * 120, 60 + row * 130), 0);
-      }}
-    >
+      }
+    },
+    onPanResponderTerminate: () => {
+      if (dragging.current) {
+        dragging.current = false;
+        nativeLibDrag.onCancel?.();
+      }
+    },
+  })).current;
+
+  return (
+    <View style={styles.blockItem} {...responder.panHandlers}>
       <CodeBlock block={wsBlock} preview showBracket={isBracket} isFirst isLast />
-    </TouchableOpacity>
+    </View>
   );
 }
 

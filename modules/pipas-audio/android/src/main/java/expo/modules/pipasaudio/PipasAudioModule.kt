@@ -95,6 +95,43 @@ class PipasAudioModule : Module() {
       }
     }
 
+    AsyncFunction("playFileWithRobot") { path: String, promise: expo.modules.kotlin.Promise ->
+      try {
+        val key = "__file__$path"
+        players[key]?.let { try { it.stop(); it.release() } catch (_: Exception) {} }
+        val player = MediaPlayer()
+        player.setDataSource(path)
+        player.prepare()
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+          val params = android.media.PlaybackParams().setSpeed(0.85f)
+          player.playbackParams = params
+        }
+        player.setOnCompletionListener { it.release(); players.remove(key) }
+        players[key] = player
+        player.start()
+        // Short rapid echo at 40ms gives a mechanical/robotic stutter
+        Handler(Looper.getMainLooper()).postDelayed({
+          try {
+            val echoKey = "__robot__$path"
+            val echo = MediaPlayer()
+            echo.setDataSource(path)
+            echo.prepare()
+            echo.setVolume(0.6f, 0.6f)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+              val params = android.media.PlaybackParams().setSpeed(0.85f)
+              echo.playbackParams = params
+            }
+            echo.setOnCompletionListener { it.release(); players.remove(echoKey) }
+            players[echoKey] = echo
+            echo.start()
+          } catch (_: Exception) {}
+        }, 40)
+        promise.resolve(null)
+      } catch (e: Exception) {
+        promise.reject("PLAY_ERROR", e.message ?: "Erro ao tocar arquivo", e)
+      }
+    }
+
     AsyncFunction("stopFile") { path: String, promise: expo.modules.kotlin.Promise ->
       val key = "__file__$path"
       players[key]?.let { try { it.stop(); it.release() } catch (_: Exception) {} }

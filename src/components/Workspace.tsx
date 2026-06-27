@@ -48,7 +48,9 @@ function NativeStackDragger({
   onSplitCancelRef.current = onSplitCancel;
 
   const didMove           = useRef(false);
-  const initialTouchY     = useRef(0); // captured pre-movement in onStartShouldSetPanResponder
+  const initialTouchY     = useRef(0);
+  const stackViewRef      = useRef<any>(null);
+  const stackPageY        = useRef(0); // absolute screen Y of stack view top
   const usingSplitOverlay = useRef(false);
   const splitStartPos     = useRef<{ x: number; y: number } | null>(null);
 
@@ -60,7 +62,8 @@ function NativeStackDragger({
     // Claim immediately so RNGHR TouchableOpacity inside blocks doesn't steal the
     // gesture before we can detect a drag. Taps are handled manually in onRelease.
     onStartShouldSetPanResponder: (e) => {
-      initialTouchY.current = e.nativeEvent.locationY ?? 0;
+      // Use pageY - stackPageY for the most reliable relY on Fabric
+      initialTouchY.current = Math.max(0, (e.nativeEvent.pageY ?? 0) - stackPageY.current);
       return true;
     },
     onMoveShouldSetPanResponder: () => true,
@@ -125,7 +128,13 @@ function NativeStackDragger({
 
   return (
     <Animated.View
+      ref={stackViewRef}
       style={[styles.stackPos, { left: pan.x, top: pan.y, zIndex: 1 }]}
+      onLayout={() => {
+        stackViewRef.current?.measure((_x: number, _y: number, _w: number, _h: number, _pageX: number, pageY: number) => {
+          stackPageY.current = pageY;
+        });
+      }}
       {...responder.panHandlers}
     >
       {children}

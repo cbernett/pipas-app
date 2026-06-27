@@ -5,10 +5,13 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PermissionsAndroid } from 'react-native';
+import { useApp } from '../context/AppContext';
 
 interface Props {
   onCancel: () => void;
   onSave: (name: string, uri?: string) => void;
+  onDelete?: () => void;
+  editSound?: { uri: string; name: string };
 }
 
 type Stage  = 'idle' | 'recording' | 'preview';
@@ -169,14 +172,30 @@ const BKT_CAP     = 22;  // bracket cap length
 const BKT_TOUCH   = 28;  // invisible touch-target half-width around bracket
 const EFFECT_SPEEDS: Record<string, number> = { fast: 1.7, slow: 0.55 };
 
-function NativeSoundRecorder({ onCancel, onSave }: Props) {
-  const [stage, setStage]           = useState<Stage>('idle');
+function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
+  const { userSounds } = useApp();
+
+  const defaultName = () => {
+    if (editSound) return editSound.name;
+    const existing = new Set(userSounds.map(s => s.name));
+    let n = userSounds.length + 1;
+    while (existing.has(`Gravação ${n}`)) n++;
+    return `Gravação ${n}`;
+  };
+
+  const [stage, setStage]           = useState<Stage>(editSound ? 'preview' : 'idle');
   const [seconds, setSeconds]       = useState(0);
   const [isPlaying, setIsPlaying]   = useState(false);
-  const [soundName, setSoundName]   = useState('Gravação 1');
+  const [playPos, setPlayPos]       = useState(0); // 0–1 playback progress
+  const [duration, setDuration]     = useState(0); // seconds
+  const [soundName, setSoundName]   = useState(defaultName);
   const [error, setError]           = useState<string | null>(null);
   const [ampBars, setAmpBars]       = useState<number[]>(Array(BAR_COUNT).fill(0));
-  const [frozenBars, setFrozenBars] = useState<number[]>(Array(BAR_COUNT).fill(0));
+  // For edit mode, pre-fill with a visual placeholder waveform pattern
+  const editPlaceholderBars = editSound
+    ? Array.from({ length: BAR_COUNT }, (_, i) => 0.3 + 0.5 * Math.abs(Math.sin(i * 0.7 + 1.3)))
+    : Array(BAR_COUNT).fill(0);
+  const [frozenBars, setFrozenBars] = useState<number[]>(editPlaceholderBars);
   const [activeEffect, setActiveEffect] = useState<string | null>(null);
   const [trimStart, setTrimStart]   = useState(0);
   const [trimEnd,   setTrimEnd]     = useState(1);
@@ -185,6 +204,8 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
   const pulse        = useRef(new Animated.Value(1)).current;
   const timerRef     = useRef<ReturnType<typeof setInterval> | null>(null);
   const ampPollRef   = useRef<ReturnType<typeof setInterval> | null>(null);
+  const playPollRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const playStartRef = useRef(0); // Date.now() when play started
   const filePathRef  = useRef<string | null>(null);
   const ampHistRef   = useRef<number[]>(Array(BAR_COUNT).fill(0));
   const trimStartRef = useRef(0);
@@ -195,6 +216,11 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
   const dragInitValRef = useRef(0);
 
   useEffect(() => { activeEffectRef.current = activeEffect; }, [activeEffect]);
+
+  // When in edit mode, pre-populate the file path reference
+  useEffect(() => {
+    if (editSound) { filePathRef.current = editSound.uri; }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Timer + pulse + amplitude polling
   useEffect(() => {
@@ -253,11 +279,32 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
       const path = await getPipasRecording().stopRecording();
       filePathRef.current = path;
       setFrozenBars([...ampHistRef.current]);
+      setDuration(seconds);
       setStage('preview');
     } catch (e: any) {
       setError(e?.message ?? 'Erro ao parar gravação.');
       setStage('idle');
     }
+  };
+
+  const stopPlayProgress = () => {
+    if (playPollRef.current) { clearInterval(playPollRef.current); playPollRef.current = null; }
+    setPlayPos(0);
+  };
+
+  const startPlayProgress = (durationSec: number, speedMult: number) => {
+    playStartRef.current = Date.now();
+    const effectiveDur = durationSec / speedMult; // clock-time of playback
+    playPollRef.current = setInterval(() => {
+      const elapsed = (Date.now() - playStartRef.current) / 1000;
+      const pos = Math.min(elapsed / effectiveDur, 1);
+      setPlayPos(pos);
+      if (pos >= 1) {
+        clearInterval(playPollRef.current!);
+        playPollRef.current = null;
+        setPlayPos(0);
+      }
+    }, 50);
   };
 
   const togglePlay = async () => {
@@ -266,10 +313,13 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
     if (isPlaying) {
       await getPipasAudio().stopFile(path).catch(() => {});
       setIsPlaying(false);
+      stopPlayProgress();
     } else {
       setIsPlaying(true);
       const eff   = activeEffectRef.current;
       const speed = eff ? (EFFECT_SPEEDS[eff] ?? 1) : 1;
+      const dur = duration > 0 ? duration : seconds;
+      startPlayProgress(dur, speed);
       let playFn: Promise<void>;
       if (eff === 'echo') {
         playFn = getPipasAudio().playFileWithEcho(path);
@@ -280,7 +330,7 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
       } else {
         playFn = getPipasAudio().playFile(path);
       }
-      playFn.catch(() => {}).finally(() => setIsPlaying(false));
+      playFn.catch(() => {}).finally(() => { setIsPlaying(false); stopPlayProgress(); });
     }
   };
 
@@ -288,6 +338,7 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
     const path = filePathRef.current;
     if (path) await getPipasAudio().stopFile(path).catch(() => {});
     setIsPlaying(false);
+    stopPlayProgress();
     setStage('idle'); setSeconds(0);
     filePathRef.current = null;
     setAmpBars(Array(BAR_COUNT).fill(0));
@@ -298,10 +349,27 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
     setTrimStart(0); setTrimEnd(1);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const path = filePathRef.current;
     if (!path) return;
-    onSave(soundName || 'Gravação', path);
+    const eff   = activeEffectRef.current;
+    if (eff && Platform.OS !== 'web') {
+      // Bake effect into output file
+      try {
+        const outPath = path.replace(/(\.[^.]+)$/, '_fx$1').replace(/\.webm$/, '.m4a').replace(/\.aac$/, '.m4a') + (path.endsWith('.m4a') ? '' : '');
+        const fixedOut = path.replace(/\.[^.]+$/, '_fx.m4a');
+        const speed = EFFECT_SPEEDS[eff] ?? 1;
+        const echoDelayMs = (eff === 'echo') ? 280 : (eff === 'robot') ? 40 : 0;
+        const echoGain    = (eff === 'echo') ? 0.4 : (eff === 'robot') ? 0.6 : 0;
+        await getPipasAudio().renderWithEffects(path, fixedOut, speed, echoDelayMs, echoGain);
+        onSave(soundName || 'Gravação', fixedOut);
+      } catch (_e) {
+        // Fallback to unprocessed audio if rendering fails
+        onSave(soundName || 'Gravação', path);
+      }
+    } else {
+      onSave(soundName || 'Gravação', path);
+    }
   };
 
   // Trim PanResponder — uses gestureState.dx delta so it works reliably on Android
@@ -392,6 +460,15 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
             <View style={{ position: 'absolute', top: 0, bottom: 0, left: startPx - 1, width: 2, backgroundColor: 'rgba(255,255,255,0.7)', borderRadius: 1 }} />
             {/* Right trim line */}
             <View style={{ position: 'absolute', top: 0, bottom: 0, left: endPx - 1, width: 2, backgroundColor: 'rgba(255,255,255,0.7)', borderRadius: 1 }} />
+            {/* Playback progress cursor */}
+            {isPlaying && (
+              <View style={{
+                position: 'absolute', top: 0, bottom: 0,
+                left: startPx + (endPx - startPx) * playPos - 1,
+                width: 2, backgroundColor: '#FFD700', borderRadius: 1,
+                zIndex: 20,
+              }} />
+            )}
           </View>
         )}
       </View>
@@ -458,25 +535,51 @@ function NativeSoundRecorder({ onCancel, onSave }: Props) {
 
       {/* CTA bar */}
       <View style={nStyles.ctaBar}>
-        <TouchableOpacity
-          style={[nStyles.saveBtn, isPreview ? nStyles.saveBtnActive : nStyles.saveBtnInactive]}
-          onPress={isPreview ? handleSave : undefined}
-          disabled={!isPreview}
-          activeOpacity={0.85}
-        >
-          <Text style={[nStyles.saveBtnText, !isPreview && { color: 'rgba(255,255,255,0.4)' }]}>GUARDAR</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[nStyles.regravarBtn, isPreview ? nStyles.regravarBtnActive : nStyles.regravarBtnInactive]}
-          onPress={isPreview ? resetToIdle : undefined}
-          disabled={!isPreview}
-          activeOpacity={0.85}
-        >
-          <Text style={[nStyles.regravarText, !isPreview && { color: 'rgba(255,255,255,0.3)' }]}>REGRAVAR</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={onCancel} activeOpacity={0.7} style={nStyles.cancelLink}>
-          <Text style={nStyles.cancelLinkText}>Cancelar</Text>
-        </TouchableOpacity>
+        {editSound ? (
+          // Edit mode: SAVE | DELETE | CANCEL
+          <>
+            <TouchableOpacity
+              style={[nStyles.saveBtn, nStyles.saveBtnActive]}
+              onPress={handleSave}
+              activeOpacity={0.85}
+            >
+              <Text style={nStyles.saveBtnText}>SALVAR</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[nStyles.regravarBtn, { borderColor: '#FF4444' }]}
+              onPress={onDelete}
+              activeOpacity={0.85}
+            >
+              <Text style={[nStyles.regravarText, { color: '#FF4444' }]}>EXCLUIR</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onCancel} activeOpacity={0.7} style={nStyles.cancelLink}>
+              <Text style={nStyles.cancelLinkText}>Cancelar</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          // Normal recording mode: SAVE | RE-RECORD | CANCEL
+          <>
+            <TouchableOpacity
+              style={[nStyles.saveBtn, isPreview ? nStyles.saveBtnActive : nStyles.saveBtnInactive]}
+              onPress={isPreview ? handleSave : undefined}
+              disabled={!isPreview}
+              activeOpacity={0.85}
+            >
+              <Text style={[nStyles.saveBtnText, !isPreview && { color: 'rgba(255,255,255,0.4)' }]}>GUARDAR</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[nStyles.regravarBtn, isPreview ? nStyles.regravarBtnActive : nStyles.regravarBtnInactive]}
+              onPress={isPreview ? resetToIdle : undefined}
+              disabled={!isPreview}
+              activeOpacity={0.85}
+            >
+              <Text style={[nStyles.regravarText, !isPreview && { color: 'rgba(255,255,255,0.3)' }]}>REGRAVAR</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onCancel} activeOpacity={0.7} style={nStyles.cancelLink}>
+              <Text style={nStyles.cancelLinkText}>Cancelar</Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
     </View>
   );
@@ -546,9 +649,9 @@ const nStyles = StyleSheet.create({
 
 // ── Web recording component ───────────────────────────────────────────────────
 
-export default function SoundRecorder({ onCancel, onSave }: Props) {
+export default function SoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
   if (Platform.OS !== 'web') {
-    return <NativeSoundRecorder onCancel={onCancel} onSave={onSave} />;
+    return <NativeSoundRecorder onCancel={onCancel} onSave={onSave} onDelete={onDelete} editSound={editSound} />;
   }
   const [stage, setStage]         = useState<Stage>('idle');
   const [seconds, setSeconds]     = useState(0);

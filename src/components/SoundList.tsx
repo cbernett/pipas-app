@@ -18,6 +18,7 @@ type SubTab = 'biblioteca' | 'meus';
 
 interface Props {
   onSelectSound: (sound: Sound) => void;
+  onEditSound?: (sound: Sound) => void;
   initialSubTab?: SubTab;
 }
 
@@ -29,7 +30,7 @@ const LIBRARY_SOUNDS: Sound[] = [
   { id: '5', name: 'Menu',     fileKey: 'menu',  duration: '1.0s' },
 ];
 
-export default function SoundList({ onSelectSound, initialSubTab = 'biblioteca' }: Props) {
+export default function SoundList({ onSelectSound, onEditSound, initialSubTab = 'biblioteca' }: Props) {
   const [subTab, setSubTab]       = useState<SubTab>(initialSubTab);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const insets                    = useSafeAreaInsets();
@@ -128,10 +129,16 @@ export default function SoundList({ onSelectSound, initialSubTab = 'biblioteca' 
                 ))}
               </View>
 
-              <View style={styles.soundInfo}>
-                <Text style={styles.soundName}>{sound.name}</Text>
+              <TouchableOpacity
+                style={styles.soundInfo}
+                onPress={canDelete && onEditSound ? () => onEditSound(sound) : undefined}
+                activeOpacity={canDelete && onEditSound ? 0.6 : 1}
+              >
+                <Text style={[styles.soundName, canDelete && onEditSound && styles.soundNameEditable]}>
+                  {sound.name}
+                </Text>
                 {sound.duration ? <Text style={styles.soundDuration}>{sound.duration}</Text> : null}
-              </View>
+              </TouchableOpacity>
 
               {/* Play/stop */}
               <TouchableOpacity
@@ -208,7 +215,8 @@ const styles = StyleSheet.create({
   waveform:      { flexDirection: 'row', alignItems: 'center', gap: 2, width: 48 },
   bar:           { width: 3, borderRadius: 2 },
   soundInfo:     { flex: 1 },
-  soundName:     { fontSize: 15, fontWeight: '700', color: '#FFF' },
+  soundName:         { fontSize: 15, fontWeight: '700', color: '#FFF' },
+  soundNameEditable: { textDecorationLine: 'underline' as const },
   soundDuration: { fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 2 },
 
   playBtn: {

@@ -24,4 +24,7 @@ export const PipasAudio = {
   stopAll(): Promise<void> {
     return NativeModule.stopAll();
   },
+  renderWithEffects(inputPath: string, outputPath: string, speed: number, echoDelayMs: number, echoGain: number): Promise<void> {
+    return NativeModule.renderWithEffects(inputPath, outputPath, speed, echoDelayMs, echoGain);
+  },
 };

@@ -59,23 +59,26 @@ function NativeStackDragger({
   }, [stack.id]);
 
   const responder = useRef(PanResponder.create({
-    // Claim immediately so RNGHR TouchableOpacity inside blocks doesn't steal the
-    // gesture before we can detect a drag. Taps are handled manually in onRelease.
-    onStartShouldSetPanResponder: (e) => {
-      // Use pageY - stackPageY for the most reliable relY on Fabric
-      initialTouchY.current = Math.max(0, (e.nativeEvent.pageY ?? 0) - stackPageY.current);
-      return true;
+    // Don't claim on start — let taps, dropdowns, and sounds reach child components.
+    // Claim only when the finger actually moves; gestureState.y0 gives the absolute
+    // screen Y of where the touch started so we can compute relY even though we
+    // didn't capture the start event.
+    onStartShouldSetPanResponder: () => false,
+    onStartShouldSetPanResponderCapture: () => false,
+    onMoveShouldSetPanResponder: (_e, gs) => {
+      return Math.abs(gs.dx) > 4 || Math.abs(gs.dy) > 4;
     },
-    onMoveShouldSetPanResponder: () => true,
-    onPanResponderGrant: () => {
+    onMoveShouldSetPanResponderCapture: () => false,
+    onPanResponderGrant: (_e, gs) => {
+      // gs.y0 is the absolute screen Y of the initial touch — subtract the stack's
+      // measured screen Y to get the Y relative to the top of this stack.
+      initialTouchY.current = Math.max(0, (gs.y0 ?? 0) - stackPageY.current);
       didMove.current = false;
       usingSplitOverlay.current = false;
       splitStartPos.current = null;
-      // Don't split yet — wait for actual movement so we can distinguish tap vs drag
     },
     onPanResponderMove: (e, g) => {
       if (!didMove.current) {
-        // First movement — decide split vs whole-stack drag
         didMove.current = true;
         const split = onSplitStartRef.current(stackIdRef.current, initialTouchY.current);
         if (split) {

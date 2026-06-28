@@ -219,13 +219,12 @@ async function executeBlock(
 function findTouchStack(stacks: BlockStack[], pad: number): WorkspaceBlock[] | null {
   for (const stack of stacks) {
     const idx = stack.blocks.findIndex(b => {
-      // Pad-specific defId (e.g. luz_1, luz_2, luz_3)
-      if (b.defId === `evt_touch_${pad}` || b.defId === `luz_${pad}`) return true;
-      // Live dropdown value — the touch pad dropdown is always param index 1
-      // (template: ['quando eu receber ', { type: 'dropdown', ... }])
+      // Live dropdown value takes priority — user may have changed it from the defId default
       const liveVal = liveParamValues.get(`${b.id}_1`);
       if (liveVal !== undefined) return liveVal === `toque ${pad}`;
-      // Fallback to original label only when no live value has been set
+      // Pad-specific defId fallback (e.g. evt_touch_1, luz_2) when dropdown was never changed
+      if (b.defId === `evt_touch_${pad}` || b.defId === `luz_${pad}`) return true;
+      // Final fallback to original label
       return b.label.toLowerCase().includes(`toque ${pad}`);
     });
     if (idx >= 0) return stack.blocks.slice(idx);

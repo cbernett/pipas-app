@@ -27,9 +27,11 @@ class PipasUsbSerialModule : Module() {
   private var port: UsbSerialPort? = null
   private var ioManager: SerialInputOutputManager? = null
   private var permissionReceiver: BroadcastReceiver? = null
+  private var attachReceiver: BroadcastReceiver? = null
   private var lastBaud = 115200
   private var reconnectTries = 0
   private var intentionalDisconnect = false
+  private var jsWantsConnection = false  // true after JS calls connect(), false after disconnect()
   private val handler = Handler(Looper.getMainLooper())
 
   private val context: Context
@@ -38,7 +40,35 @@ class PipasUsbSerialModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("PipasUsbSerial")
 
-    Events("onData", "onDisconnect", "onError")
+    Events("onData", "onDisconnect", "onError", "onDeviceAttached")
+
+    OnCreate {
+      // Listen for USB device plug-in events so we can auto-connect
+      val receiver = object : BroadcastReceiver() {
+        override fun onReceive(ctx: Context, intent: Intent) {
+          if (intent.action != UsbManager.ACTION_USB_DEVICE_ATTACHED) return
+          // Notify JS so it can call connect() — or auto-connect if JS already asked
+          sendEvent("onDeviceAttached", mapOf<String, Any>())
+          if (jsWantsConnection && port == null) {
+            handler.postDelayed({ findAndOpen(lastBaud, null) }, 500)
+          }
+        }
+      }
+      attachReceiver = receiver
+      val filter = IntentFilter(UsbManager.ACTION_USB_DEVICE_ATTACHED)
+      try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+          context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+          context.registerReceiver(receiver, filter)
+        }
+      } catch (_: Exception) {}
+    }
+
+    OnDestroy {
+      attachReceiver?.let { try { context.unregisterReceiver(it) } catch (_: Exception) {} }
+      attachReceiver = null
+    }
 
     Function("isSupported") {
       val manager = context.getSystemService(Context.USB_SERVICE) as UsbManager
@@ -47,6 +77,7 @@ class PipasUsbSerialModule : Module() {
 
     AsyncFunction("connect") { baudRate: Int, promise: expo.modules.kotlin.Promise ->
       try {
+        jsWantsConnection = true
         intentionalDisconnect = false
         reconnectTries = 0
         // Clean up stale state
@@ -64,6 +95,7 @@ class PipasUsbSerialModule : Module() {
     }
 
     AsyncFunction("disconnect") { promise: expo.modules.kotlin.Promise ->
+      jsWantsConnection = false
       intentionalDisconnect = true
       handler.removeCallbacksAndMessages(null)
       try {

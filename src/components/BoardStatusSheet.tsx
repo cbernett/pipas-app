@@ -32,10 +32,25 @@ export default function BoardStatusSheet() {
     // Auto-update status when USB cable is physically unplugged
     const unsubDisconnect = board.onDisconnect(() => {
       setBoardStatus('disconnected');
-      setBoardSheetOpen(true); // re-open sheet so user knows what happened
+      setBoardSheetOpen(true);
     });
 
-    return () => { unsubLog(); unsubDisconnect(); };
+    // Auto-connect when board is physically plugged in (native only)
+    // startAutoConnect returns an unsubscribe fn; it handles connect internally
+    const unsubAttach = (board as any).startAutoConnect?.() ?? (() => {});
+
+    // When auto-connect succeeds the native side fires onRawLine with the
+    // connected message — update UI status to reflect that
+    const unsubAttachStatus = Platform.OS !== 'web'
+      ? board.onRawLine((line) => {
+          if (line.includes('baud — aguardando')) {
+            setBoardStatus('connected');
+            setBoardSheetOpen(false);
+          }
+        })
+      : () => {};
+
+    return () => { unsubLog(); unsubDisconnect(); unsubAttach(); unsubAttachStatus(); };
   }, []);
 
   const handleConnect = async () => {

@@ -64,8 +64,13 @@ class PipasBoardSerialNative {
 
   async connect(): Promise<void> {
     await PipasUsbSerial.connect(this.baud);
-    this.connected = true;
+    this._onConnected();
+  }
 
+  private _onConnected() {
+    this.connected = true;
+    this.unsubData?.();
+    this.unsubNativeDisconnect?.();
     this.unsubData = PipasUsbSerial.onData((bytes) => {
       for (const b of bytes) this.parseByte(b);
     });
@@ -74,8 +79,21 @@ class PipasBoardSerialNative {
       this.emitRaw('[cabo desconectado]');
       this.disconnectListeners.forEach(fn => fn());
     });
-
     this.emitRaw(`[conectado a ${this.baud} baud — aguardando toque…]`);
+  }
+
+  startAutoConnect(): () => void {
+    // Auto-connect whenever the USB board is physically plugged in
+    return PipasUsbSerial.onDeviceAttached(async () => {
+      if (this.connected) return;
+      this.emitRaw('[placa detectada — conectando…]');
+      try {
+        await PipasUsbSerial.connect(this.baud);
+        this._onConnected();
+      } catch (_e) {
+        this.emitRaw('[falha ao conectar — toque Conectar]');
+      }
+    });
   }
 
   async disconnect(): Promise<void> {

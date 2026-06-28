@@ -27,4 +27,8 @@ export const PipasUsbSerial = {
     const sub = emitter.addListener('onDisconnect', (e: DisconnectEvent) => fn(e.reason));
     return () => sub.remove();
   },
+  onDeviceAttached(fn: () => void): () => void {
+    const sub = emitter.addListener('onDeviceAttached', () => fn());
+    return () => sub.remove();
+  },
 };

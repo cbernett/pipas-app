@@ -973,7 +973,9 @@ export default function Workspace() {
                           });
                         } else {
                           const newId = `sp_${Date.now()}`;
-                          next = [...stks, { id: newId, x, y, blocks: overlayBlocks }];
+                          const ox = Math.max(0, Math.min(CANVAS_W - 160, x));
+                          const oy = Math.max(0, Math.min(CANVAS_H - 44, y));
+                          next = [...stks, { id: newId, x: ox, y: oy, blocks: overlayBlocks }];
                         }
                         localStacksRef.current = next;
                         setStacks(next);
@@ -992,7 +994,12 @@ export default function Workspace() {
                         return;
                       }
 
-                      const snap = findSnap(dragStk, x, y);
+                      // Clamp to canvas bounds so blocks can't be lost off the edge
+                      const BLOCK_W = 160; const BLOCK_H = 44;
+                      const cx = Math.max(0, Math.min(CANVAS_W - BLOCK_W, x));
+                      const cy = Math.max(0, Math.min(CANVAS_H - BLOCK_H, y));
+
+                      const snap = findSnap(dragStk, cx, cy);
                       let next: BlockStack[];
                       if (snap) {
                         next = stks
@@ -1004,7 +1011,7 @@ export default function Workspace() {
                             return { ...s, blocks: merged };
                           });
                       } else {
-                        next = stks.map((s: BlockStack) => s.id === id ? { ...s, x, y } : s);
+                        next = stks.map((s: BlockStack) => s.id === id ? { ...s, x: cx, y: cy } : s);
                       }
                       localStacksRef.current = next;
                       setStacks(next);

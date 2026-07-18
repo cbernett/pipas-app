@@ -18,13 +18,16 @@ export const PipasAudio = {
   playFileWithRobot(path: string): Promise<void> {
     return NativeModule.playFileWithRobot(path);
   },
+  playFileWithTrim(path: string, trimStart: number, trimEnd: number, speed: number): Promise<void> {
+    return NativeModule.playFileWithTrim(path, trimStart, trimEnd, speed);
+  },
   stopFile(path: string): Promise<void> {
     return NativeModule.stopFile(path);
   },
   stopAll(): Promise<void> {
     return NativeModule.stopAll();
   },
-  renderWithEffects(inputPath: string, outputPath: string, speed: number, echoDelayMs: number, echoGain: number): Promise<void> {
-    return NativeModule.renderWithEffects(inputPath, outputPath, speed, echoDelayMs, echoGain);
+  renderWithEffects(inputPath: string, outputPath: string, speed: number, echoDelayMs: number, echoGain: number, trimStart = 0, trimEnd = 1): Promise<void> {
+    return NativeModule.renderWithEffects(inputPath, outputPath, speed, echoDelayMs, echoGain, trimStart, trimEnd);
   },
 };

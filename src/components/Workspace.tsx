@@ -1,5 +1,5 @@
 import React, { useRef, useState, useCallback, useEffect, useLayoutEffect } from 'react';
-import { View, ScrollView, Text, StyleSheet, Animated, TouchableOpacity, useWindowDimensions, Platform, PanResponder, Dimensions } from 'react-native';
+import { View, ScrollView, Text, StyleSheet, Animated, TouchableOpacity, useWindowDimensions, Platform, PanResponder, Dimensions, Modal } from 'react-native';
 // flushSync is only used in web pointer-event handlers; never import react-dom on native
 // because it registers the web reconciler and destabilizes Fabric/New Architecture.
 const flushSync: (fn: () => void) => void =
@@ -231,13 +231,14 @@ export default function Workspace() {
     if (Platform.OS === 'web') return;
     nativeLibDrag.onStart = (block, px, py) => {
       nativeLibDragBlockRef.current = block;
-      nativeLibDragX.setValue(px - 60);
-      nativeLibDragY.setValue(py - 30);
+      // Screen coords for the Modal-based ghost (no canvas offset needed)
+      nativeLibDragX.setValue(px - 80);
+      nativeLibDragY.setValue(py - 22);
       setNativeLibDragBlock(block);
     };
     nativeLibDrag.onMove = (px, py) => {
-      nativeLibDragX.setValue(px - 60);
-      nativeLibDragY.setValue(py - 30);
+      nativeLibDragX.setValue(px - 80);
+      nativeLibDragY.setValue(py - 22);
     };
     nativeLibDrag.onEnd = (px, py) => {
       const block = nativeLibDragBlockRef.current;
@@ -291,6 +292,8 @@ export default function Workspace() {
 
   // ── Snap detection — checks every inter-block boundary, not just bottom ──
   const findSnap = useCallback((dragStack: BlockStack, dragX: number, dragY: number): { id: string; y: number; insertAt: number } | null => {
+    // Events blocks must always be the root of their own stack — never merged into another
+    if (dragStack.blocks.length > 0 && isTouchEvent(dragStack.blocks[0])) return null;
     const emY = dragY;
 
     for (const s of localStacksRef.current) {
@@ -1034,15 +1037,7 @@ export default function Workspace() {
               return stackContent;
             })}
 
-            {/* Native library drag ghost — follows finger while dragging from library */}
-            {Platform.OS !== 'web' && nativeLibDragBlock && (
-              <Animated.View
-                pointerEvents="none"
-                style={[styles.stackPos, { left: nativeLibDragX, top: nativeLibDragY, zIndex: 300, opacity: 0.85 }]}
-              >
-                <CodeBlock block={nativeLibDragBlock} isFirst isLast isDragging />
-              </Animated.View>
-            )}
+            {/* placeholder — ghost is rendered in Modal below so it floats above the drawer */}
 
             {/* Native split overlay — floats above everything while a mid-stack block is being dragged */}
             {Platform.OS !== 'web' && nativeSplitOverlay && (
@@ -1063,6 +1058,18 @@ export default function Workspace() {
           </View>
         </ScrollView>
       </ScrollView>
+
+      {/* Library drag ghost — Modal so it floats above the drawer in screen coords */}
+      {Platform.OS !== 'web' && (
+        <Modal visible={!!nativeLibDragBlock} transparent animationType="none" onRequestClose={() => {}}>
+          <Animated.View
+            pointerEvents="none"
+            style={{ position: 'absolute', left: nativeLibDragX, top: nativeLibDragY, opacity: 0.88, zIndex: 999 }}
+          >
+            {nativeLibDragBlock && <CodeBlock block={nativeLibDragBlock} isFirst isLast isDragging />}
+          </Animated.View>
+        </Modal>
+      )}
     </View>
   );
 }

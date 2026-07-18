@@ -82,10 +82,11 @@ class PipasBoardSerialNative {
     this.emitRaw(`[conectado a ${this.baud} baud — aguardando toque…]`);
   }
 
-  startAutoConnect(): () => void {
+  startAutoConnect(onAttempt?: () => void): () => void {
     // Auto-connect whenever the USB board is physically plugged in
     return PipasUsbSerial.onDeviceAttached(async () => {
       if (this.connected) return;
+      onAttempt?.();
       this.emitRaw('[placa detectada — conectando…]');
       try {
         await PipasUsbSerial.connect(this.baud);

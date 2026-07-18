@@ -139,6 +139,35 @@ class PipasAudioModule : Module() {
       }
     }
 
+    // Preview playback that respects trim handles (no re-encode needed).
+    AsyncFunction("playFileWithTrim") { path: String, trimStart: Double, trimEnd: Double, speed: Float, promise: expo.modules.kotlin.Promise ->
+      try {
+        val key = "__file__$path"
+        players[key]?.let { try { it.stop(); it.release() } catch (_: Exception) {} }
+        val player = MediaPlayer()
+        player.setDataSource(path)
+        player.prepare()
+        val totalMs = player.duration  // ms
+        val startMs = (trimStart * totalMs).toInt()
+        val endMs   = (trimEnd   * totalMs).toInt()
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M && speed != 1f) {
+          player.playbackParams = android.media.PlaybackParams().setSpeed(speed)
+        }
+        val handler = Handler(Looper.getMainLooper())
+        val stopRunnable = Runnable {
+          try { player.pause() } catch (_: Exception) {}
+          try { player.seekTo(startMs) } catch (_: Exception) {}
+        }
+        player.setOnSeekCompleteListener { it.start(); handler.postDelayed(stopRunnable, ((endMs - startMs) / speed).toLong()) }
+        player.setOnCompletionListener { handler.removeCallbacks(stopRunnable); it.release(); players.remove(key) }
+        players[key] = player
+        player.seekTo(startMs)
+        promise.resolve(null)
+      } catch (e: Exception) {
+        promise.reject("PLAY_ERROR", e.message ?: "Erro ao tocar arquivo", e)
+      }
+    }
+
     AsyncFunction("stopFile") { path: String, promise: expo.modules.kotlin.Promise ->
       val key = "__file__$path"
       players[key]?.let { try { it.stop(); it.release() } catch (_: Exception) {} }
@@ -154,10 +183,10 @@ class PipasAudioModule : Module() {
 
     // Renders audio with effects baked in. speed=1 for no pitch/speed change,
     // echoDelayMs=0 for no echo. Runs on background thread.
-    AsyncFunction("renderWithEffects") { inputPath: String, outputPath: String, speed: Float, echoDelayMs: Int, echoGain: Float, promise: expo.modules.kotlin.Promise ->
+    AsyncFunction("renderWithEffects") { inputPath: String, outputPath: String, speed: Float, echoDelayMs: Int, echoGain: Float, trimStart: Double, trimEnd: Double, promise: expo.modules.kotlin.Promise ->
       Thread {
         try {
-          applyPcmEffects(inputPath, outputPath, speed, echoDelayMs, echoGain)
+          applyPcmEffects(inputPath, outputPath, speed, echoDelayMs, echoGain, trimStart, trimEnd)
           promise.resolve(null)
         } catch (e: Exception) {
           promise.reject("RENDER_ERROR", e.message ?: "Erro ao processar áudio", e)
@@ -166,7 +195,7 @@ class PipasAudioModule : Module() {
     }
   }
 
-  private fun applyPcmEffects(inputPath: String, outputPath: String, speed: Float, echoDelayMs: Int, echoGain: Float) {
+  private fun applyPcmEffects(inputPath: String, outputPath: String, speed: Float, echoDelayMs: Int, echoGain: Float, trimStart: Double = 0.0, trimEnd: Double = 1.0) {
     // Decode to PCM
     val extractor = MediaExtractor()
     extractor.setDataSource(inputPath)
@@ -214,8 +243,12 @@ class PipasAudioModule : Module() {
     }
     decoder.stop(); decoder.release(); extractor.release()
 
+    // Apply trim: slice to [trimStart, trimEnd] fraction of total samples
+    val allSamples = pcmList.toShortArray()
+    val startIdx = (trimStart * allSamples.size).toInt().coerceIn(0, allSamples.size)
+    val endIdx   = (trimEnd   * allSamples.size).toInt().coerceIn(startIdx, allSamples.size)
     // Apply effects to PCM
-    var samples = pcmList.toShortArray()
+    var samples = allSamples.copyOfRange(startIdx, endIdx)
     if (speed != 1f) {
       val newSize = (samples.size / speed).roundToInt()
       val out = ShortArray(newSize)

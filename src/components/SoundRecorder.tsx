@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Animated, Platform,
-  TextInput, ScrollView, PanResponder,
+  TextInput, ScrollView, PanResponder, KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PermissionsAndroid } from 'react-native';
@@ -9,7 +9,7 @@ import { useApp } from '../context/AppContext';
 
 interface Props {
   onCancel: () => void;
-  onSave: (name: string, uri?: string) => void;
+  onSave: (name: string, uri?: string, duration?: number) => void;
   onDelete?: () => void;
   editSound?: { uri: string; name: string };
 }
@@ -211,6 +211,8 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
   const trimStartRef = useRef(0);
   const trimEndRef   = useRef(1);
   const activeEffectRef = useRef<string | null>(null);
+  const isPlayingRef    = useRef(false); // avoids stale closure in togglePlay
+  const recordStartRef  = useRef(0);    // Date.now() when recording started
   // Drag state
   const dragWhichRef   = useRef<'start' | 'end' | null>(null);
   const dragInitValRef = useRef(0);
@@ -221,6 +223,16 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
   useEffect(() => {
     if (editSound) { filePathRef.current = editSound.uri; }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Stop audio when component unmounts (covers cancel, back gesture, app switch)
+  useEffect(() => {
+    return () => {
+      const path = filePathRef.current;
+      if (path) getPipasAudio().stopFile(path).catch(() => {});
+      getPipasAudio().stopAll().catch(() => {});
+      if (playPollRef.current) clearInterval(playPollRef.current);
+    };
+  }, []);
 
   // Timer + pulse + amplitude polling
   useEffect(() => {
@@ -268,6 +280,7 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
       }
       const path = await getPipasRecording().startRecording();
       filePathRef.current = path;
+      recordStartRef.current = Date.now();
       setStage('recording');
     } catch (e: any) {
       setError(e?.message ?? 'Erro ao iniciar gravação.');
@@ -278,8 +291,22 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
     try {
       const path = await getPipasRecording().stopRecording();
       filePathRef.current = path;
-      setFrozenBars([...ampHistRef.current]);
-      setDuration(seconds);
+      // Trim leading silence so the waveform fills left-to-right
+      const raw = [...ampHistRef.current];
+      const firstNonZero = raw.findIndex(v => v > 0.02);
+      const meaningful = firstNonZero > 0 ? raw.slice(firstNonZero) : raw;
+      if (meaningful.length > 0 && meaningful.length < BAR_COUNT) {
+        const normalized = Array.from({ length: BAR_COUNT }, (_, i) =>
+          meaningful[Math.floor(i * meaningful.length / BAR_COUNT)] ?? 0
+        );
+        setFrozenBars(normalized);
+      } else {
+        setFrozenBars(raw);
+      }
+      const actualDuration = recordStartRef.current > 0
+        ? (Date.now() - recordStartRef.current) / 1000
+        : Math.max(seconds, 0.5);
+      setDuration(actualDuration);
       setStage('preview');
     } catch (e: any) {
       setError(e?.message ?? 'Erro ao parar gravação.');
@@ -287,14 +314,16 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
     }
   };
 
-  const stopPlayProgress = () => {
+  const stopPlayback = () => {
+    isPlayingRef.current = false;
+    setIsPlaying(false);
     if (playPollRef.current) { clearInterval(playPollRef.current); playPollRef.current = null; }
     setPlayPos(0);
   };
 
   const startPlayProgress = (durationSec: number, speedMult: number) => {
     playStartRef.current = Date.now();
-    const effectiveDur = durationSec / speedMult; // clock-time of playback
+    const effectiveDur = Math.max(0.3, durationSec / speedMult);
     playPollRef.current = setInterval(() => {
       const elapsed = (Date.now() - playStartRef.current) / 1000;
       const pos = Math.min(elapsed / effectiveDur, 1);
@@ -302,7 +331,12 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
       if (pos >= 1) {
         clearInterval(playPollRef.current!);
         playPollRef.current = null;
+        isPlayingRef.current = false;
+        setIsPlaying(false);
         setPlayPos(0);
+        // Ensure native audio is stopped so it doesn't keep playing
+        const p = filePathRef.current;
+        if (p) getPipasAudio().stopFile(p).catch(() => {});
       }
     }, 50);
   };
@@ -310,18 +344,34 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
   const togglePlay = async () => {
     const path = filePathRef.current;
     if (!path) return;
-    if (isPlaying) {
+    if (isPlayingRef.current) {
       await getPipasAudio().stopFile(path).catch(() => {});
-      setIsPlaying(false);
-      stopPlayProgress();
+      stopPlayback();
     } else {
+      isPlayingRef.current = true;
       setIsPlaying(true);
       const eff   = activeEffectRef.current;
       const speed = eff ? (EFFECT_SPEEDS[eff] ?? 1) : 1;
-      const dur = duration > 0 ? duration : seconds;
-      startPlayProgress(dur, speed);
+      const ts    = trimStartRef.current;
+      const te    = trimEndRef.current;
+      const totalDur = duration > 0 ? duration : seconds;
+      const trimmedDur = totalDur * (te - ts);
+      startPlayProgress(trimmedDur > 0 ? trimmedDur : totalDur, speed);
+      const hasTrim = ts > 0.001 || te < 0.999;
       let playFn: Promise<void>;
-      if (eff === 'echo') {
+      if (hasTrim || (eff !== 'echo' && eff !== 'robot')) {
+        if (eff === 'echo') {
+          playFn = hasTrim
+            ? getPipasAudio().playFileWithTrim(path, ts, te, speed)
+            : getPipasAudio().playFileWithEcho(path);
+        } else if (eff === 'robot') {
+          playFn = hasTrim
+            ? getPipasAudio().playFileWithTrim(path, ts, te, speed)
+            : getPipasAudio().playFileWithRobot(path);
+        } else {
+          playFn = getPipasAudio().playFileWithTrim(path, ts, te, speed);
+        }
+      } else if (eff === 'echo') {
         playFn = getPipasAudio().playFileWithEcho(path);
       } else if (eff === 'robot') {
         playFn = getPipasAudio().playFileWithRobot(path);
@@ -330,15 +380,15 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
       } else {
         playFn = getPipasAudio().playFile(path);
       }
-      playFn.catch(() => {}).finally(() => { setIsPlaying(false); stopPlayProgress(); });
+      // Native promises resolve immediately (fire-and-forget) — don't use .finally for UI state
+      playFn.catch(() => {});
     }
   };
 
   const resetToIdle = async () => {
     const path = filePathRef.current;
     if (path) await getPipasAudio().stopFile(path).catch(() => {});
-    setIsPlaying(false);
-    stopPlayProgress();
+    stopPlayback();
     setStage('idle'); setSeconds(0);
     filePathRef.current = null;
     setAmpBars(Array(BAR_COUNT).fill(0));
@@ -353,22 +403,22 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
     const path = filePathRef.current;
     if (!path) return;
     const eff   = activeEffectRef.current;
-    if (eff && Platform.OS !== 'web') {
-      // Bake effect into output file
+    const ts    = trimStartRef.current;
+    const te    = trimEndRef.current;
+    const needsRender = Platform.OS !== 'web' && (eff != null || ts > 0.001 || te < 0.999);
+    if (needsRender) {
       try {
-        const outPath = path.replace(/(\.[^.]+)$/, '_fx$1').replace(/\.webm$/, '.m4a').replace(/\.aac$/, '.m4a') + (path.endsWith('.m4a') ? '' : '');
         const fixedOut = path.replace(/\.[^.]+$/, '_fx.m4a');
-        const speed = EFFECT_SPEEDS[eff] ?? 1;
-        const echoDelayMs = (eff === 'echo') ? 280 : (eff === 'robot') ? 40 : 0;
-        const echoGain    = (eff === 'echo') ? 0.4 : (eff === 'robot') ? 0.6 : 0;
-        await getPipasAudio().renderWithEffects(path, fixedOut, speed, echoDelayMs, echoGain);
-        onSave(soundName || 'Gravação', fixedOut);
+        const speed       = eff ? (EFFECT_SPEEDS[eff] ?? 1) : 1;
+        const echoDelayMs = eff === 'echo' ? 280 : eff === 'robot' ? 40 : 0;
+        const echoGain    = eff === 'echo' ? 0.4  : eff === 'robot' ? 0.6 : 0;
+        await getPipasAudio().renderWithEffects(path, fixedOut, speed, echoDelayMs, echoGain, ts, te);
+        onSave(soundName || 'Gravação', fixedOut, duration > 0 ? duration : seconds);
       } catch (_e) {
-        // Fallback to unprocessed audio if rendering fails
-        onSave(soundName || 'Gravação', path);
+        onSave(soundName || 'Gravação', path, duration > 0 ? duration : seconds);
       }
     } else {
-      onSave(soundName || 'Gravação', path);
+      onSave(soundName || 'Gravação', path, duration > 0 ? duration : seconds);
     }
   };
 
@@ -415,6 +465,7 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
   const endPx   = trimEnd   * trackW;
 
   return (
+    <KeyboardAvoidingView behavior={Platform.OS === 'android' ? 'height' : 'padding'} style={{ flex: 1 }}>
     <View style={nStyles.wrap}>
 
       {/* Timer */}
@@ -454,17 +505,17 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
 
         {/* Trim handles — invisible touch zones + thin line indicators */}
         {isPreview && (
-          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10 }}
+          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10, overflow: 'hidden' }}
                 {...trimPanResponder.panHandlers}>
             {/* Left trim line */}
-            <View style={{ position: 'absolute', top: 0, bottom: 0, left: startPx - 1, width: 2, backgroundColor: 'rgba(255,255,255,0.7)', borderRadius: 1 }} />
+            <View style={{ position: 'absolute', top: 0, bottom: 0, left: Math.max(0, startPx - 1), width: 2, backgroundColor: 'rgba(255,255,255,0.7)', borderRadius: 1 }} />
             {/* Right trim line */}
-            <View style={{ position: 'absolute', top: 0, bottom: 0, left: endPx - 1, width: 2, backgroundColor: 'rgba(255,255,255,0.7)', borderRadius: 1 }} />
+            <View style={{ position: 'absolute', top: 0, bottom: 0, left: Math.min(trackW - 2, endPx - 1), width: 2, backgroundColor: 'rgba(255,255,255,0.7)', borderRadius: 1 }} />
             {/* Playback progress cursor */}
             {isPlaying && (
               <View style={{
                 position: 'absolute', top: 0, bottom: 0,
-                left: startPx + (endPx - startPx) * playPos - 1,
+                left: Math.min(trackW - 2, Math.max(0, startPx + (endPx - startPx) * playPos - 1)),
                 width: 2, backgroundColor: '#FFD700', borderRadius: 1,
                 zIndex: 20,
               }} />
@@ -582,6 +633,7 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
         )}
       </View>
     </View>
+    </KeyboardAvoidingView>
   );
 }
 

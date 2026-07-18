@@ -36,12 +36,12 @@ export default function SonsScreen() {
     }).start(() => { setDrawerOpen(false); setEditingSound(null); });
   };
 
-  const handleSave = (name: string, uri?: string) => {
+  const handleSave = (name: string, uri?: string, duration?: number) => {
     if (editingSound) {
       // Replace the existing sound: delete old, add updated
       deleteUserSound(editingSound.id);
     }
-    if (uri) addUserSound(name, uri);
+    if (uri) addUserSound(name, uri, duration);
     setLandMeus(true);
     closeDrawer();
   };

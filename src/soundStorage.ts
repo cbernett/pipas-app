@@ -48,7 +48,7 @@ async function getNativeStorage() {
 
 const NATIVE_KEY = 'pipas_user_sounds_v1';
 
-interface NativeMeta { id: string; name: string; path: string; }
+interface NativeMeta { id: string; name: string; path: string; duration?: number; }
 
 // ─── Public API ─────────────────────────────────────────────────────────────
 
@@ -71,7 +71,7 @@ export async function loadSounds(): Promise<UserSound[]> {
     const valid: UserSound[] = [];
     for (const m of metas) {
       const info = await FileSystem.getInfoAsync(m.path);
-      if (info.exists) valid.push({ id: m.id, name: m.name, uri: m.path });
+      if (info.exists) valid.push({ id: m.id, name: m.name, uri: m.path, duration: m.duration });
     }
     return valid;
   } catch { return []; }
@@ -95,7 +95,7 @@ export async function saveSound(sound: UserSound): Promise<void> {
     await FileSystem.copyAsync({ from: sound.uri, to: dest });
     const raw   = await AsyncStorage.getItem(NATIVE_KEY);
     const metas: NativeMeta[] = raw ? JSON.parse(raw) : [];
-    metas.push({ id: sound.id, name: sound.name, path: dest });
+    metas.push({ id: sound.id, name: sound.name, path: dest, duration: sound.duration });
     await AsyncStorage.setItem(NATIVE_KEY, JSON.stringify(metas));
   } catch (e) { console.warn('saveSound native failed', e); }
 }

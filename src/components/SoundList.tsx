@@ -30,22 +30,48 @@ const LIBRARY_SOUNDS: Sound[] = [
   { id: '5', name: 'Menu',     fileKey: 'menu',  duration: '1.0s' },
 ];
 
+const BAR_HEIGHTS = [3, 6, 10, 7, 12, 5, 8, 11, 4, 9, 6];
+const BAR_COUNT_LIST = BAR_HEIGHTS.length;
+
 export default function SoundList({ onSelectSound, onEditSound, initialSubTab = 'biblioteca' }: Props) {
-  const [subTab, setSubTab]       = useState<SubTab>(initialSubTab);
-  const [playingId, setPlayingId] = useState<string | null>(null);
-  const insets                    = useSafeAreaInsets();
-  const audioBlobRef              = useRef<HTMLAudioElement | null>(null);
+  const [subTab, setSubTab]         = useState<SubTab>(initialSubTab);
+  const [playingId, setPlayingId]   = useState<string | null>(null);
+  const [playProgress, setPlayProgress] = useState(0); // 0–1
+  const insets                      = useSafeAreaInsets();
+  const audioBlobRef                = useRef<HTMLAudioElement | null>(null);
+  const playPollRef                 = useRef<ReturnType<typeof setInterval> | null>(null);
+  const playStartRef                = useRef(0);
+  const playingIdRef                = useRef<string | null>(null);
   const { userSounds, deleteUserSound } = useApp();
 
+  const stopProgress = () => {
+    if (playPollRef.current) { clearInterval(playPollRef.current); playPollRef.current = null; }
+    setPlayProgress(0);
+  };
+
+  const startProgress = (durationSec: number, onDone?: () => void) => {
+    playStartRef.current = Date.now();
+    playPollRef.current = setInterval(() => {
+      const pos = Math.min((Date.now() - playStartRef.current) / 1000 / durationSec, 1);
+      setPlayProgress(pos);
+      if (pos >= 1) {
+        stopProgress();
+        onDone?.();
+      }
+    }, 50);
+  };
+
   const extraSounds: Sound[] = userSounds.map(s => ({
-    id: s.id, name: s.name, fileKey: s.name, duration: '', uri: s.uri,
+    id: s.id, name: s.name, fileKey: s.name,
+    duration: s.duration != null ? `${s.duration.toFixed(1)}s` : '',
+    uri: s.uri,
   }));
 
   const visibleSounds = subTab === 'biblioteca' ? LIBRARY_SOUNDS : extraSounds;
   const canDelete     = subTab === 'meus';
 
   const handlePlay = async (sound: Sound) => {
-    if (playingId === sound.id) {
+    if (playingIdRef.current === sound.id) {
       if (Platform.OS === 'web' && audioBlobRef.current) {
         audioBlobRef.current.pause();
         audioBlobRef.current = null;
@@ -55,22 +81,33 @@ export default function SoundList({ onSelectSound, onEditSound, initialSubTab = 
       } else {
         await stopAllSounds();
       }
+      playingIdRef.current = null;
       setPlayingId(null);
+      stopProgress();
       return;
     }
+    stopProgress();
+    playingIdRef.current = sound.id;
     setPlayingId(sound.id);
+    // Parse duration for progress bar (e.g. "2.1s" → 2.1, fallback 3s)
+    const durSec = sound.duration ? parseFloat(sound.duration) : 3;
+    const clearPlaying = () => { playingIdRef.current = null; setPlayingId(null); };
+    const onError = () => { clearPlaying(); stopProgress(); };
     if (Platform.OS === 'web' && sound.uri) {
+      startProgress(isNaN(durSec) ? 3 : durSec, clearPlaying);
       const audio = new Audio(sound.uri);
       audioBlobRef.current = audio;
-      audio.onended = () => { setPlayingId(null); audioBlobRef.current = null; };
-      audio.play().catch(() => setPlayingId(null));
+      audio.onended = () => { audioBlobRef.current = null; clearPlaying(); stopProgress(); };
+      audio.play().catch(onError);
     } else if (Platform.OS !== 'web' && sound.uri) {
-      // Recorded user sound — play from file path
+      // Native: promise resolves immediately (fire-and-forget) — interval drives cleanup
+      startProgress(isNaN(durSec) ? 3 : durSec, clearPlaying);
       const { PipasAudio } = require('../../modules/pipas-audio');
-      PipasAudio.playFile(sound.uri).catch(() => {}).finally(() => setPlayingId(null));
+      PipasAudio.playFile(sound.uri).catch(onError);
     } else {
-      await playSound(sound.fileKey);
-      setPlayingId(null);
+      // Library sounds: playSound awaits completion
+      startProgress(isNaN(durSec) ? 3 : durSec, clearPlaying);
+      playSound(sound.fileKey).then(clearPlaying).catch(onError);
     }
   };
 
@@ -118,15 +155,22 @@ export default function SoundList({ onSelectSound, onEditSound, initialSubTab = 
               onPress={() => onSelectSound(sound)}
               activeOpacity={0.8}
             >
-              {/* Waveform bars */}
+              {/* Waveform bars with playback progress */}
               <View style={styles.waveform}>
-                {[3, 6, 10, 7, 12, 5, 8, 11, 4, 9, 6].map((h, i) => (
-                  <View key={i} style={[styles.bar, {
-                    height: h * 2,
-                    backgroundColor: playingId === sound.id
-                      ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.25)',
-                  }]} />
-                ))}
+                {BAR_HEIGHTS.map((h, i) => {
+                  const isActive = playingId === sound.id;
+                  const passed = isActive && (i / BAR_COUNT_LIST) <= playProgress;
+                  return (
+                    <View key={i} style={[styles.bar, {
+                      height: h * 2,
+                      backgroundColor: passed
+                        ? '#5BC4D1'
+                        : isActive
+                          ? 'rgba(255,255,255,0.25)'
+                          : 'rgba(255,255,255,0.25)',
+                    }]} />
+                  );
+                })}
               </View>
 
               <TouchableOpacity

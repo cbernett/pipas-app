@@ -137,15 +137,14 @@ class PipasUsbSerialModule : Module() {
     val driver = drivers.firstOrNull()
     if (driver == null) {
       promise?.reject("NO_DEVICE", "Nenhuma placa USB encontrada. Conecte a placa e tente novamente.", null)
-        ?: run { sendEvent("onDisconnect", mapOf("reason" to "device not found after reconnect")) }
+        ?: handleRunError("device not found after reconnect")  // keep retry counting, don't open drawer prematurely
       return
     }
     if (!manager.hasPermission(driver.device)) {
       if (promise != null) {
         requestPermissionThenOpen(manager, driver, baudRate, promise)
       } else {
-        // During auto-reconnect Android should still have permission; if not, give up.
-        sendEvent("onDisconnect", mapOf("reason" to "permission lost"))
+        handleRunError("permission lost")  // keep retry counting
       }
     } else {
       openPort(manager, driver, baudRate, promise)
@@ -159,7 +158,6 @@ class PipasUsbSerialModule : Module() {
 
     try { ioManager?.stop() } catch (_: Exception) {}
     ioManager = null
-    // Don't close port yet — we'll try to reuse the connection.
 
     if (reconnectTries >= MAX_RECONNECT_TRIES) {
       port = null
@@ -176,7 +174,6 @@ class PipasUsbSerialModule : Module() {
         val p = port
         if (p != null) {
           try {
-            // Re-assert DTR/RTS so the board resumes transmitting
             try { p.dtr = true } catch (_: Exception) {}
             try { p.rts = true } catch (_: Exception) {}
             val listener = makeListener()

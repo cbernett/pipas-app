@@ -13,6 +13,7 @@ export interface UserSound {
   id: string;
   name: string;
   uri: string; // blob URL
+  duration?: number; // seconds
 }
 
 interface AppContextType {
@@ -22,7 +23,7 @@ interface AppContextType {
   stopRun: () => void;
   simulateTouch: (pad: number) => void;
   userSounds: UserSound[];
-  addUserSound: (name: string, uri: string) => void;
+  addUserSound: (name: string, uri: string, duration?: number) => void;
   deleteUserSound: (id: string) => void;
   tapBlock: (block: WorkspaceBlock) => void;
   triggerScript: (blocks: WorkspaceBlock[]) => void;
@@ -265,8 +266,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     loadSounds().then(sounds => { if (sounds.length) setUserSounds(sounds); });
   }, []);
 
-  const addUserSound = useCallback((name: string, uri: string) => {
-    const s: UserSound = { id: `usr_${Date.now()}`, name, uri };
+  const addUserSound = useCallback((name: string, uri: string, duration?: number) => {
+    const s: UserSound = { id: `usr_${Date.now()}`, name, uri, duration };
     setUserSounds(prev => [...prev, s]);
     saveSound(s);
   }, []);
@@ -380,8 +381,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Debounce touch pads: the board sends bytes for every pad UP TO the touched pad
   // (e.g. touching pad 3 emits pad 1, pad 2, pad 3 in quick succession). We collect
-  // all pads that arrive within 80 ms and fire only the highest one.
-  const pendingPadRef  = useRef<number | null>(null);
+  // all unique pads that arrive within 25 ms and fire each one. Firing all unique pads
+  // means accidentally touching two pads simultaneously still triggers the intended block.
+  const pendingPadsRef = useRef<Set<number>>(new Set());
   const padTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const firePad = useCallback((pad: number) => {
@@ -405,15 +407,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [stopRun]);
 
   const handleTouchPad = useCallback((pad: number) => {
-    // Accumulate: keep the highest pad received in this burst
-    pendingPadRef.current = Math.max(pendingPadRef.current ?? 0, pad);
+    pendingPadsRef.current.add(pad);
     if (padTimerRef.current) clearTimeout(padTimerRef.current);
     padTimerRef.current = setTimeout(() => {
-      const best = pendingPadRef.current;
-      pendingPadRef.current = null;
-      padTimerRef.current  = null;
-      if (best !== null) firePad(best);
-    }, 80);
+      const pads = [...pendingPadsRef.current];
+      pendingPadsRef.current.clear();
+      padTimerRef.current = null;
+      pads.forEach(p => firePad(p));
+    }, 25);
   }, [firePad]);
 
   useEffect(() => board.onTouch(handleTouchPad), [handleTouchPad]);

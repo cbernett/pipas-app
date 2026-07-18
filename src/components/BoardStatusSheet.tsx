@@ -15,9 +15,12 @@ export default function BoardStatusSheet() {
   } = useApp();
   const insets = useSafeAreaInsets();
   const [connecting, setConnecting]   = useState(false);
+  const connectCancelled = useRef(false);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [serialLog, setSerialLog]     = useState<string[]>([]);
+  const [showAutoConnectedPopup, setShowAutoConnectedPopup] = useState(false);
   const logScrollRef = useRef<ScrollView>(null);
+  const isAutoConnect = useRef(false);
 
   // Always subscribed — log persists across open/close
   useEffect(() => {
@@ -36,16 +39,21 @@ export default function BoardStatusSheet() {
     });
 
     // Auto-connect when board is physically plugged in (native only)
-    // startAutoConnect returns an unsubscribe fn; it handles connect internally
-    const unsubAttach = (board as any).startAutoConnect?.() ?? (() => {});
+    const unsubAttach = (board as any).startAutoConnect?.(() => {
+      isAutoConnect.current = true;
+    }) ?? (() => {});
 
     // When auto-connect succeeds the native side fires onRawLine with the
-    // connected message — update UI status to reflect that
+    // connected message — update UI status and show popup if it was auto-connect
     const unsubAttachStatus = Platform.OS !== 'web'
       ? board.onRawLine((line) => {
           if (line.includes('baud — aguardando')) {
             setBoardStatus('connected');
             setBoardSheetOpen(false);
+            if (isAutoConnect.current) {
+              isAutoConnect.current = false;
+              setShowAutoConnectedPopup(true);
+            }
           }
         })
       : () => {};
@@ -54,33 +62,58 @@ export default function BoardStatusSheet() {
   }, []);
 
   const handleConnect = async () => {
-    if (!board.isSupported) {
-      setConnectError(Platform.OS === 'web'
-        ? 'Web Serial não disponível neste navegador. Abra o app no Google Chrome em um computador.'
-        : 'Nenhuma placa encontrada. Conecte a placa via cabo USB-OTG e tente novamente.');
+    if (Platform.OS === 'web' && !board.isSupported) {
+      setConnectError('Web Serial não disponível neste navegador. Abra o app no Google Chrome em um computador.');
       return;
     }
     setConnectError(null);
-    try {
-      setConnecting(true);
-      await board.connect();
-      setBoardStatus('connected');
-      setBoardSheetOpen(false);
-    } catch (e: any) {
-      const msg: string = e?.message ?? String(e);
-      if (msg.toLowerCase().includes('no port selected') || msg.toLowerCase().includes('user cancelled')) {
-        // User dismissed the picker — show a gentle nudge
-        setConnectError('Nenhuma porta selecionada. Selecione a porta USB da placa na janela do Chrome.');
-      } else {
-        setBoardStatus('error');
-        setConnectError(msg);
+    setConnecting(true);
+    connectCancelled.current = false;
+    // On Android, USB permission can take up to ~90s after a reinstall.
+    // Retry silently so the user doesn't see a false "not found" error.
+    const RETRY_INTERVAL = 3000;
+    const CONNECT_TIMEOUT = 10000; // 10s per attempt — avoids hanging on permission dialog
+    const RETRY_MAX = 30; // 30 × 3s = 90s
+    let tries = 0;
+    const attempt = async (): Promise<void> => {
+      if (connectCancelled.current) return;
+      try {
+        await Promise.race([
+          board.connect(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('NO_DEVICE')), CONNECT_TIMEOUT)
+          ),
+        ]);
+        setBoardStatus('connected');
+        setBoardSheetOpen(false);
+      } catch (e: any) {
+        const msg: string = e?.message ?? String(e);
+        if (msg.toLowerCase().includes('no port selected') || msg.toLowerCase().includes('user cancelled')) {
+          setConnectError('Nenhuma porta selecionada. Selecione a porta USB da placa na janela do Chrome.');
+          return;
+        }
+        const notFound = msg.includes('NO_DEVICE') || msg.toLowerCase().includes('não encontrada') || !board.isSupported;
+        if (notFound && tries < RETRY_MAX && !connectCancelled.current) {
+          tries++;
+          await board.disconnect().catch(() => {});
+          await new Promise(r => setTimeout(r, RETRY_INTERVAL));
+          return attempt();
+        } else {
+          setBoardStatus('error');
+          setConnectError(msg);
+        }
       }
+    };
+    try {
+      await attempt();
     } finally {
       setConnecting(false);
     }
   };
 
   const handleDisconnect = async () => {
+    connectCancelled.current = true;
+    setConnecting(false);
     await board.disconnect();
     setBoardStatus('disconnected');
     if (activeBlockId !== null) {
@@ -100,6 +133,27 @@ export default function BoardStatusSheet() {
     boardStatus === 'error'     ? '#EF4444' : 'rgba(255,255,255,0.4)';
 
   return (
+    <>
+    {/* Auto-connect notification popup */}
+    <Modal
+      visible={showAutoConnectedPopup}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setShowAutoConnectedPopup(false)}
+    >
+      <View style={styles.popupBackdrop}>
+        <View style={styles.popupBox}>
+          <Text style={styles.popupTitle}>Placa Pipas conectada.</Text>
+          <TouchableOpacity
+            style={styles.popupBtn}
+            onPress={() => setShowAutoConnectedPopup(false)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.popupBtnText}>OK</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
     <Modal
       visible={boardSheetOpen}
       transparent
@@ -125,6 +179,26 @@ export default function BoardStatusSheet() {
             {/* Actions based on status */}
             {boardStatus === 'connected' && (
               <>
+                <ActionButton
+                  label={connecting ? 'RECONECTANDO…' : 'FORÇAR RECONEXÃO'}
+                  color="#F59E0B"
+                  onPress={async () => {
+                    setConnecting(true);
+                    await board.disconnect();
+                    setBoardStatus('disconnected');
+                    await new Promise(r => setTimeout(r, 600));
+                    try {
+                      await board.connect();
+                      setBoardStatus('connected');
+                    } catch (e: any) {
+                      setBoardStatus('error');
+                      setConnectError(e?.message ?? String(e));
+                    } finally {
+                      setConnecting(false);
+                    }
+                  }}
+                  disabled={connecting}
+                />
                 <ActionButton label="DESCONECTAR" color="#FFFFFF" outline onPress={handleDisconnect} />
               </>
             )}
@@ -180,6 +254,7 @@ export default function BoardStatusSheet() {
         </Pressable>
       </Pressable>
     </Modal>
+    </>
   );
 }
 
@@ -205,6 +280,25 @@ function ActionButton({ label, onPress, color, outline, disabled }: {
 }
 
 const styles = StyleSheet.create({
+  popupBackdrop: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  popupBox: {
+    backgroundColor: '#1C1F2B',
+    borderRadius: 16, padding: 28, width: 280,
+    alignItems: 'center',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
+  },
+  popupTitle: {
+    color: '#FFFFFF', fontSize: 16, fontWeight: '600',
+    textAlign: 'center', marginBottom: 24,
+  },
+  popupBtn: {
+    backgroundColor: '#22C55E', borderRadius: 10,
+    paddingVertical: 12, paddingHorizontal: 40,
+  },
+  popupBtnText: { color: '#000000', fontWeight: '700', fontSize: 15 },
   backdrop: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end',
   },

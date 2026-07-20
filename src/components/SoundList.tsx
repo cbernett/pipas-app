@@ -23,11 +23,21 @@ interface Props {
 }
 
 const LIBRARY_SOUNDS: Sound[] = [
-  { id: '1', name: 'Miado',    fileKey: 'meow!', duration: '0.8s' },
-  { id: '2', name: 'Bah!',     fileKey: 'bah!',  duration: '0.5s' },
-  { id: '3', name: 'Aplausos', fileKey: 'cheer', duration: '2.1s' },
-  { id: '4', name: 'Erro',     fileKey: 'erro',  duration: '0.4s' },
-  { id: '5', name: 'Menu',     fileKey: 'menu',  duration: '1.0s' },
+  { id: '1',  name: 'Miado',    fileKey: 'meow!',   duration: '0.8s' },
+  { id: '2',  name: 'Bah!',     fileKey: 'bah!',    duration: '0.5s' },
+  { id: '3',  name: 'Aplausos', fileKey: 'cheer',   duration: '2.1s' },
+  { id: '4',  name: 'Erro',     fileKey: 'erro',    duration: '0.4s' },
+  { id: '5',  name: 'Menu',     fileKey: 'menu',    duration: '1.0s' },
+  { id: '6',  name: 'Laser',    fileKey: 'laser',   duration: '0.4s' },
+  { id: '7',  name: 'Boing',    fileKey: 'boing',   duration: '0.8s' },
+  { id: '8',  name: 'Tambor',   fileKey: 'tambor',  duration: '0.5s' },
+  { id: '9',  name: 'Sino',     fileKey: 'sino',    duration: '1.2s' },
+  { id: '10', name: 'Foguete',  fileKey: 'foguete', duration: '0.9s' },
+  { id: '11', name: 'Moeda',    fileKey: 'moeda',   duration: '0.6s' },
+  { id: '12', name: 'Alarme',   fileKey: 'alarme',  duration: '1.0s' },
+  { id: '13', name: 'Vitória',  fileKey: 'vitoria', duration: '1.3s' },
+  { id: '14', name: 'Splash',   fileKey: 'splash',  duration: '0.6s' },
+  { id: '15', name: 'Buzzer',   fileKey: 'buzzer',  duration: '0.4s' },
 ];
 
 const BAR_HEIGHTS = [3, 6, 10, 7, 12, 5, 8, 11, 4, 9, 6];

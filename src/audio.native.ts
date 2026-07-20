@@ -2,11 +2,21 @@ import { PipasAudio } from '../modules/pipas-audio';
 
 // Maps the display name used in the app to the bare filename (no extension)
 const SOUND_FILE: Record<string, string> = {
-  'meow!': 'meow',
-  'bah!':  'bah',
-  cheer:   'cheer',
-  erro:    'erro',
-  menu:    'menu',
+  'meow!':  'meow',
+  'bah!':   'bah',
+  cheer:    'cheer',
+  erro:     'erro',
+  menu:     'menu',
+  laser:    'laser',
+  boing:    'boing',
+  tambor:   'tambor',
+  sino:     'sino',
+  foguete:  'foguete',
+  moeda:    'moeda',
+  alarme:   'alarme',
+  vitoria:  'vitoria',
+  splash:   'splash',
+  buzzer:   'buzzer',
 };
 
 export const SOUND_NAMES = Object.keys(SOUND_FILE);

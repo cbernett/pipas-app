@@ -23,11 +23,11 @@ interface Props {
 }
 
 const LIBRARY_SOUNDS: Sound[] = [
-  { id: '1',  name: 'Miado',    fileKey: 'meow!',   duration: '0.8s' },
+  { id: '1',  name: 'Miado',    fileKey: 'meow!',   duration: '0.6s' },
   { id: '2',  name: 'Bah!',     fileKey: 'bah!',    duration: '0.5s' },
-  { id: '3',  name: 'Aplausos', fileKey: 'cheer',   duration: '2.1s' },
-  { id: '4',  name: 'Erro',     fileKey: 'erro',    duration: '0.4s' },
-  { id: '5',  name: 'Menu',     fileKey: 'menu',    duration: '1.0s' },
+  { id: '3',  name: 'Aplausos', fileKey: 'cheer',   duration: '1.8s' },
+  { id: '4',  name: 'Erro',     fileKey: 'erro',    duration: '0.6s' },
+  { id: '5',  name: 'Menu',     fileKey: 'menu',    duration: '0.5s' },
   { id: '6',  name: 'Laser',    fileKey: 'laser',   duration: '0.4s' },
   { id: '7',  name: 'Boing',    fileKey: 'boing',   duration: '0.8s' },
   { id: '8',  name: 'Tambor',   fileKey: 'tambor',  duration: '0.5s' },

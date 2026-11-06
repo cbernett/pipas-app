@@ -30,7 +30,7 @@ interface AppContextType {
   activeTab: 'codigo' | 'sons';
   setActiveTab: (t: 'codigo' | 'sons') => void;
   stacks: BlockStack[];
-  setStacks: (s: BlockStack[]) => void;
+  setStacks: (s: BlockStack[] | ((prev: BlockStack[]) => BlockStack[])) => void;
   addStack: (block: WorkspaceBlock, x?: number, y?: number) => void;
   libraryOpen: boolean;
   setLibraryOpen: (o: boolean) => void;
@@ -237,7 +237,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [boardStatus, setBoardStatus] = useState<BoardStatus>('disconnected');
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
   const [activeTab, setActiveTab]         = useState<'codigo' | 'sons'>('codigo');
-  const [stacks, setStacks]               = useState<BlockStack[]>([]);
+  const [stacks, setStacksRaw]            = useState<BlockStack[]>([]);
+
+  // Persist stacks across sessions
+  const STACKS_KEY = 'pipas_stacks_v1';
+  const saveStacks = useCallback((s: BlockStack[]) => {
+    const json = JSON.stringify(s);
+    if (Platform.OS === 'web') {
+      try { localStorage.setItem(STACKS_KEY, json); } catch {}
+    } else {
+      import('@react-native-async-storage/async-storage')
+        .then(m => m.default.setItem(STACKS_KEY, json))
+        .catch(() => {});
+    }
+  }, []);
+  const setStacks = useCallback((sOrFn: BlockStack[] | ((prev: BlockStack[]) => BlockStack[])) => {
+    setStacksRaw(prev => {
+      const next = typeof sOrFn === 'function' ? sOrFn(prev) : sOrFn;
+      saveStacks(next);
+      return next;
+    });
+  }, [saveStacks]);
+
+  // Load persisted stacks on mount
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      try {
+        const raw = localStorage.getItem(STACKS_KEY);
+        if (raw) setStacksRaw(JSON.parse(raw));
+      } catch {}
+    } else {
+      import('@react-native-async-storage/async-storage')
+        .then(m => m.default.getItem(STACKS_KEY))
+        .then(raw => { if (raw) setStacksRaw(JSON.parse(raw)); })
+        .catch(() => {});
+    }
+  }, []);
+
   const [libraryOpen, setLibraryOpen]     = useState(false);
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [boardSheetOpen, setBoardSheetOpen]     = useState(false);
@@ -462,7 +498,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
     setStacks(prev => [...prev, newStack]);
     setLibraryOpen(false);
-  }, []);
+  }, [setStacks]);
 
   return (
     <AppContext.Provider value={{

@@ -44,6 +44,46 @@ const SOUND_FILES: Record<string, any> = {
   chimbal:     require('../assets/sounds/chimbal.wav'),
   prato:       require('../assets/sounds/prato.wav'),
   teclado:     require('../assets/sounds/teclado.wav'),
+  // extra percussion
+  cowbell:     require('../assets/sounds/cowbell.wav'),
+  triangulo:   require('../assets/sounds/triangulo.wav'),
+  pandeiro:    require('../assets/sounds/pandeiro.wav'),
+  agogo:       require('../assets/sounds/agogo.wav'),
+  djembe:      require('../assets/sounds/djembe.wav'),
+  maracas:     require('../assets/sounds/maracas.wav'),
+  // beats
+  rock_beat:   require('../assets/sounds/rock_beat.wav'),
+  samba:       require('../assets/sounds/samba.wav'),
+  funk:        require('../assets/sounds/funk.wav'),
+  hiphop:      require('../assets/sounds/hiphop.wav'),
+  latina:      require('../assets/sounds/latina.wav'),
+  eletronica:  require('../assets/sounds/eletronica.wav'),
+  // melodias
+  feliz:       require('../assets/sounds/feliz.wav'),
+  misteriosa:  require('../assets/sounds/misteriosa.wav'),
+  triste:      require('../assets/sounds/triste.wav'),
+  suspense:    require('../assets/sounds/suspense.wav'),
+  fanfarra:    require('../assets/sounds/fanfarra.wav'),
+  reggae:      require('../assets/sounds/reggae.wav'),
+  // vozes
+  risada:      require('../assets/sounds/risada.wav'),
+  uau:         require('../assets/sounds/uau.wav'),
+  assobio:     require('../assets/sounds/assobio.wav'),
+  voz_robo:    require('../assets/sounds/voz_robo.wav'),
+  contagem:    require('../assets/sounds/contagem.wav'),
+  // ambiente
+  chuva:       require('../assets/sounds/chuva.wav'),
+  trovao:      require('../assets/sounds/trovao.wav'),
+  fogo:        require('../assets/sounds/fogo.wav'),
+  ondas:       require('../assets/sounds/ondas.wav'),
+  floresta:    require('../assets/sounds/floresta.wav'),
+  espaco:      require('../assets/sounds/espaco.wav'),
+  // animais
+  leao:        require('../assets/sounds/leao.wav'),
+  elefante:    require('../assets/sounds/elefante.wav'),
+  sapo:        require('../assets/sounds/sapo.wav'),
+  pato:        require('../assets/sounds/pato.wav'),
+  lobo:        require('../assets/sounds/lobo.wav'),
 };
 
 export const SOUND_NAMES = Object.keys(SOUND_FILES);

@@ -40,6 +40,12 @@ const SOUND_OPTS  = [
   'trompete', 'trombone', 'trompa', 'tuba',
   'harpa', 'piano', 'xilofone', 'timpano',
   'guitarra', 'baixo', 'bumbo', 'caixa', 'chimbal', 'prato', 'teclado',
+  'cowbell', 'triangulo', 'pandeiro', 'agogo', 'djembe', 'maracas',
+  'rock_beat', 'samba', 'funk', 'hiphop', 'latina', 'eletronica',
+  'feliz', 'misteriosa', 'triste', 'suspense', 'fanfarra', 'reggae',
+  'risada', 'uau', 'assobio', 'voz_robo', 'contagem',
+  'chuva', 'trovao', 'fogo', 'ondas', 'floresta', 'espaco',
+  'leao', 'elefante', 'sapo', 'pato', 'lobo',
 ];
 const STATE_OPTS  = ['ligado', 'desligado'];
 const DEVICE_OPTS = ['LED 1', 'LED 2', 'motor 1', 'motor 2'];

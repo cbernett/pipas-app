@@ -1,10 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  Platform, Modal, Animated,
+  Platform, Modal, Animated, ScrollView, useWindowDimensions,
 } from 'react-native';
 import { WorkspaceBlock, useApp } from '../context/AppContext';
 import { BLOCK_TEMPLATES, BlockParamDef } from '../data/blocks';
+import { SOUND_SECTIONS, QUICK_PICKS, EMOJI_FOR, NAME_FOR, ALL_SOUNDS } from '../data/soundData';
+import { playSound } from '../audio';
 
 export const TAB_W      = 36;
 export const TAB_H      = 9;   // reduced — indent is less deep
@@ -329,19 +331,13 @@ function NumberBubble({ blockId, paramIdx, value }: { blockId: string; paramIdx:
 }
 
 function DropdownBubble({ blockId, paramIdx, value, options }: { blockId: string; paramIdx: number; value: string; options?: string[] }) {
-  // Persist selection in liveParamValues so remounts (during drag cycles) don't reset to default
   const liveKey = `${blockId}_${paramIdx}`;
   const [val, setVal]   = useState(() => liveParamValues.get(liveKey) ?? value);
   const [open, setOpen] = useState(false);
   const [pos, setPos]   = useState({ x: 0, y: 0 });
   const ref = useRef<View>(null);
   const { userSounds, setActiveTab } = useApp();
-  // For sound dropdowns (options includes library sounds), also show user recordings
   const isSoundDropdown = options?.includes('meow!') ?? false;
-  const opts = [
-    ...(options ?? [value]),
-    ...(isSoundDropdown ? userSounds.map(s => s.name) : []),
-  ];
 
   const handleSelect = (opt: string) => {
     setVal(opt);
@@ -349,57 +345,251 @@ function DropdownBubble({ blockId, paramIdx, value, options }: { blockId: string
     setOpen(false);
   };
 
-  const handleOpen = () => {
+  const handleOpenSimple = () => {
     ref.current?.measureInWindow((x, y, _w, h) => {
       setPos({ x, y: y + h + 4 });
       setOpen(true);
     });
   };
 
-  const handleRecordNew = () => {
-    setOpen(false);
-    setActiveTab('sons'); // navigate to the record-sound screen
-  };
-
-  return (
-    // testID maps to data-testid on web — lets Workspace.onDown skip drag-init for dropdown taps
-    <View ref={ref} testID="dropdown-bubble">
-      <TouchableOpacity style={styles.dropBubble} onPress={handleOpen} activeOpacity={0.8}>
-        <Text style={styles.dropText}>{val}</Text>
-        <Text style={styles.dropChevron}>▾</Text>
-      </TouchableOpacity>
-
-      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-        <TouchableOpacity style={styles.dropOverlay} onPress={() => setOpen(false)} activeOpacity={1}>
-          <View style={[styles.dropMenu, { top: pos.y, left: pos.x }]}>
-            {opts.map(opt => (
-              <TouchableOpacity
-                key={opt}
-                style={[styles.dropOption, opt === val && styles.dropOptionActive]}
-                onPress={() => handleSelect(opt)}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.dropOptionText, opt === val && styles.dropOptionTextActive]}>
-                  {opt}
-                </Text>
-              </TouchableOpacity>
-            ))}
-            {isSoundDropdown && (
-              <>
-                <View style={styles.dropDivider} />
+  if (!isSoundDropdown) {
+    // Simple dropdown for non-sound params (LED, motor, toque — 2-3 options)
+    const opts = options ?? [value];
+    return (
+      <View ref={ref} testID="dropdown-bubble">
+        <TouchableOpacity style={styles.dropBubble} onPress={handleOpenSimple} activeOpacity={0.8}>
+          <Text style={styles.dropText}>{val}</Text>
+          <Text style={styles.dropChevron}>▾</Text>
+        </TouchableOpacity>
+        <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+          <TouchableOpacity style={styles.dropOverlay} onPress={() => setOpen(false)} activeOpacity={1}>
+            <View style={[styles.dropMenu, { top: pos.y, left: pos.x }]}>
+              {opts.map(opt => (
                 <TouchableOpacity
-                  style={styles.dropRecordLink}
-                  onPress={handleRecordNew}
+                  key={opt}
+                  style={[styles.dropOption, opt === val && styles.dropOptionActive]}
+                  onPress={() => handleSelect(opt)}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.dropRecordLinkText}>GRAVE UM SOM</Text>
+                  <Text style={[styles.dropOptionText, opt === val && styles.dropOptionTextActive]}>{opt}</Text>
                 </TouchableOpacity>
-              </>
-            )}
-          </View>
-        </TouchableOpacity>
+              ))}
+            </View>
+          </TouchableOpacity>
+        </Modal>
+      </View>
+    );
+  }
+
+  // Sound picker bottom sheet
+  return (
+    <View ref={ref} testID="dropdown-bubble">
+      <TouchableOpacity style={styles.dropBubble} onPress={() => setOpen(true)} activeOpacity={0.8}>
+        <Text style={styles.dropText}>{EMOJI_FOR[val] ?? '🎵'} {NAME_FOR[val] ?? val}</Text>
+        <Text style={styles.dropChevron}>▾</Text>
+      </TouchableOpacity>
+      <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
+        <SoundPickerSheet
+          current={val}
+          userSounds={userSounds}
+          onSelect={handleSelect}
+          onClose={() => setOpen(false)}
+          onRecord={() => { setOpen(false); setActiveTab('sons'); }}
+        />
       </Modal>
     </View>
+  );
+}
+
+function SoundPickerSheet({
+  current, userSounds, onSelect, onClose, onRecord,
+}: {
+  current: string;
+  userSounds: Array<{ name: string }>;
+  onSelect: (s: string) => void;
+  onClose: () => void;
+  onRecord: () => void;
+}) {
+  const { height } = useWindowDimensions();
+  const [query, setQuery] = useState('');
+  const [preview, setPreview] = useState<string | null>(null);
+  const [expandedSection, setExpandedSection] = useState<string | null>(null);
+
+  const handlePreview = (fileKey: string) => {
+    setPreview(fileKey);
+    try { playSound(fileKey); } catch {}
+    setTimeout(() => setPreview(null), 1000);
+  };
+
+  const q = query.trim().toLowerCase();
+  const searchResults = q
+    ? ALL_SOUNDS.filter(s =>
+        s.name.toLowerCase().includes(q) ||
+        s.fileKey.toLowerCase().includes(q)
+      )
+    : null;
+
+  // User recording rows
+  const userRows = userSounds.map(s => ({ fileKey: s.name, name: s.name, emoji: '🎙️' }));
+
+  return (
+    <TouchableOpacity style={styles.spOverlay} onPress={onClose} activeOpacity={1}>
+      <TouchableOpacity activeOpacity={1} onPress={() => {}}>
+        <View style={[styles.spSheet, { maxHeight: height * 0.72 }]}>
+          {/* Header */}
+          <View style={styles.spHeader}>
+            <Text style={styles.spTitle}>🎵 Escolher Som</Text>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Text style={styles.spClose}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Search */}
+          <View style={styles.spSearchRow}>
+            <Text style={styles.spSearchIcon}>🔍</Text>
+            <TextInput
+              style={styles.spSearchInput}
+              placeholder="Buscar som..."
+              placeholderTextColor="#AAA"
+              value={query}
+              onChangeText={setQuery}
+              autoCorrect={false}
+              clearButtonMode="while-editing"
+            />
+          </View>
+
+          <ScrollView style={styles.spScroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            {searchResults ? (
+              /* Search results */
+              searchResults.length === 0 ? (
+                <Text style={styles.spEmpty}>Nenhum resultado</Text>
+              ) : (
+                <View style={styles.spResultList}>
+                  {searchResults.map(s => (
+                    <SoundRow
+                      key={s.fileKey}
+                      emoji={s.emoji}
+                      name={s.name}
+                      fileKey={s.fileKey}
+                      selected={s.fileKey === current}
+                      previewing={preview === s.fileKey}
+                      onSelect={onSelect}
+                      onPreview={handlePreview}
+                    />
+                  ))}
+                </View>
+              )
+            ) : (
+              <>
+                {/* Quick picks */}
+                <Text style={styles.spSectionLabel}>Favoritos</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.spQuickRow}>
+                  {QUICK_PICKS.map(fk => (
+                    <TouchableOpacity
+                      key={fk}
+                      style={[styles.spChip, fk === current && styles.spChipActive]}
+                      onPress={() => onSelect(fk)}
+                      activeOpacity={0.75}
+                    >
+                      <Text style={styles.spChipEmoji}>{EMOJI_FOR[fk] ?? '🎵'}</Text>
+                      <Text style={[styles.spChipName, fk === current && styles.spChipNameActive]}>
+                        {NAME_FOR[fk] ?? fk}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+
+                {/* User sounds */}
+                {userRows.length > 0 && (
+                  <>
+                    <Text style={styles.spSectionLabel}>Meus Sons</Text>
+                    <View style={styles.spResultList}>
+                      {userRows.map(s => (
+                        <SoundRow
+                          key={s.fileKey}
+                          emoji={s.emoji}
+                          name={s.name}
+                          fileKey={s.fileKey}
+                          selected={s.fileKey === current}
+                          previewing={false}
+                          onSelect={onSelect}
+                          onPreview={() => {}}
+                        />
+                      ))}
+                    </View>
+                  </>
+                )}
+
+                {/* Library sections — collapsible */}
+                <Text style={styles.spSectionLabel}>Biblioteca</Text>
+                {SOUND_SECTIONS.map(section => {
+                  const isOpen = expandedSection === section.title;
+                  return (
+                    <View key={section.title} style={styles.spSection}>
+                      <TouchableOpacity
+                        style={[styles.spSectionHeader, { borderLeftColor: section.color }]}
+                        onPress={() => setExpandedSection(isOpen ? null : section.title)}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={styles.spSectionTitle}>{section.title}</Text>
+                        <Text style={styles.spSectionChevron}>{isOpen ? '▴' : '▾'}</Text>
+                      </TouchableOpacity>
+                      {isOpen && (
+                        <View style={styles.spResultList}>
+                          {section.sounds.map(s => (
+                            <SoundRow
+                              key={s.fileKey}
+                              emoji={s.emoji}
+                              name={s.name}
+                              fileKey={s.fileKey}
+                              selected={s.fileKey === current}
+                              previewing={preview === s.fileKey}
+                              onSelect={onSelect}
+                              onPreview={handlePreview}
+                            />
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </>
+            )}
+
+            {/* Record button */}
+            <TouchableOpacity style={styles.spRecordBtn} onPress={onRecord} activeOpacity={0.8}>
+              <Text style={styles.spRecordBtnText}>🎙️  Gravar meu som</Text>
+            </TouchableOpacity>
+            <View style={{ height: 24 }} />
+          </ScrollView>
+        </View>
+      </TouchableOpacity>
+    </TouchableOpacity>
+  );
+}
+
+function SoundRow({ emoji, name, fileKey, selected, previewing, onSelect, onPreview }: {
+  emoji: string; name: string; fileKey: string;
+  selected: boolean; previewing: boolean;
+  onSelect: (k: string) => void; onPreview: (k: string) => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.spRow, selected && styles.spRowActive]}
+      onPress={() => onSelect(fileKey)}
+      activeOpacity={0.75}
+    >
+      <Text style={styles.spRowEmoji}>{emoji}</Text>
+      <Text style={[styles.spRowName, selected && styles.spRowNameActive]}>{name}</Text>
+      {selected && <Text style={styles.spRowCheck}>✓</Text>}
+      <TouchableOpacity
+        style={[styles.spRowPlay, previewing && styles.spRowPlayActive]}
+        onPress={() => onPreview(fileKey)}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        <Text style={styles.spRowPlayIcon}>{previewing ? '♪' : '▶'}</Text>
+      </TouchableOpacity>
+    </TouchableOpacity>
   );
 }
 
@@ -607,5 +797,158 @@ const styles = StyleSheet.create({
   },
   dropRecordLinkText: {
     fontSize: 12, fontWeight: '800', color: '#6B4FBB', letterSpacing: 0.5,
+  },
+
+  // ── Sound picker bottom sheet
+  spOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  spSheet: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: 8,
+    overflow: 'hidden',
+  },
+  spHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  spTitle: {
+    fontSize: 16, fontWeight: '800', color: '#1A1A2E',
+  },
+  spClose: {
+    fontSize: 16, color: '#888', fontWeight: '700',
+  },
+  spSearchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 14,
+    marginTop: 10,
+    marginBottom: 4,
+    backgroundColor: '#F4F4F8',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: Platform.OS === 'ios' ? 8 : 4,
+  },
+  spSearchIcon: { fontSize: 14, marginRight: 6 },
+  spSearchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#1A1A2E',
+    fontWeight: '500',
+  },
+  spScroll: { flex: 1 },
+  spSectionLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#888',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginTop: 14,
+    marginBottom: 4,
+    paddingHorizontal: 16,
+  },
+  spQuickRow: {
+    paddingLeft: 14,
+    marginBottom: 4,
+  },
+  spChip: {
+    alignItems: 'center',
+    backgroundColor: '#F4F4F8',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginRight: 8,
+    minWidth: 60,
+  },
+  spChipActive: {
+    backgroundColor: '#6B4FBB',
+  },
+  spChipEmoji: { fontSize: 22, marginBottom: 2 },
+  spChipName: {
+    fontSize: 10, fontWeight: '700', color: '#555', textAlign: 'center',
+  },
+  spChipNameActive: { color: '#FFF' },
+  spSection: {
+    marginHorizontal: 14,
+    marginBottom: 4,
+  },
+  spSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderLeftWidth: 3,
+    borderRadius: 6,
+    backgroundColor: '#F8F8FA',
+    marginBottom: 2,
+  },
+  spSectionTitle: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#333',
+  },
+  spSectionChevron: {
+    fontSize: 10, color: '#AAA', fontWeight: '700',
+  },
+  spResultList: {
+    marginHorizontal: 14,
+  },
+  spRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 9,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+    borderRadius: 6,
+  },
+  spRowActive: {
+    backgroundColor: '#F0EEFF',
+  },
+  spRowEmoji: { fontSize: 18, marginRight: 10, width: 26, textAlign: 'center' },
+  spRowName: {
+    flex: 1,
+    fontSize: 14, fontWeight: '600', color: '#222',
+  },
+  spRowNameActive: { color: '#6B4FBB', fontWeight: '700' },
+  spRowCheck: { fontSize: 14, color: '#6B4FBB', marginRight: 8, fontWeight: '700' },
+  spRowPlay: {
+    width: 28, height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F0F0F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  spRowPlayActive: { backgroundColor: '#6B4FBB' },
+  spRowPlayIcon: { fontSize: 11, color: '#555' },
+  spEmpty: {
+    textAlign: 'center',
+    color: '#AAA',
+    fontSize: 14,
+    paddingVertical: 24,
+  },
+  spRecordBtn: {
+    marginHorizontal: 16,
+    marginTop: 16,
+    paddingVertical: 13,
+    borderRadius: 12,
+    backgroundColor: '#6B4FBB',
+    alignItems: 'center',
+  },
+  spRecordBtnText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
 });

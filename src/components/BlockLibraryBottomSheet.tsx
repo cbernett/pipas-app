@@ -1,7 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Animated,
-  ScrollView, Image,
+  ScrollView, Image, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../context/AppContext';
@@ -117,6 +117,13 @@ const styles = StyleSheet.create({
     borderLeftColor: 'rgba(255,255,255,0.08)',
     borderRightWidth: 1,
     borderRightColor: 'rgba(255,255,255,0.08)',
+    ...(Platform.OS !== 'web' ? {
+      position: 'absolute' as any,
+      bottom: 0,
+      left: 0,
+      right: 0,
+      zIndex: 10,
+    } : {}),
   },
   handleArea: {
     height: HANDLE_HEIGHT,

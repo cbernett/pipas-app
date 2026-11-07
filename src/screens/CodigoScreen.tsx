@@ -47,12 +47,15 @@ function BoardWarningToast({ message }: { message: string | null }) {
 }
 
 export default function CodigoScreen() {
-  const { boardWarning } = useApp();
+  const { boardWarning, libraryOpen } = useApp();
+  // Keep workspace clear of the drawer on Android — absolute-positioned drawer
+  // doesn't participate in flex layout so we add paddingBottom manually.
+  const drawerH = Platform.OS === 'web' ? 0 : (libraryOpen ? 336 : 64);
 
   return (
     <ErrorBoundary>
       <View style={styles.container}>
-        <View style={styles.workspaceArea}>
+        <View style={[styles.workspaceArea, { paddingBottom: drawerH }]}>
           <Workspace />
         </View>
         <BlockLibraryBottomSheet />

@@ -434,8 +434,10 @@ function SoundPickerSheet({
 
   return (
     <TouchableOpacity style={styles.spOverlay} onPress={onClose} activeOpacity={1}>
-      <TouchableOpacity activeOpacity={1} onPress={() => {}}>
-        <View style={[styles.spSheet, { maxHeight: height * 0.72 }]}>
+      <View
+        style={[styles.spSheet, { maxHeight: height * 0.72 }]}
+        onStartShouldSetResponder={() => true}
+      >
           {/* Header */}
           <View style={styles.spHeader}>
             <Text style={styles.spTitle}>🎵 Escolher Som</Text>
@@ -562,8 +564,7 @@ function SoundPickerSheet({
             </TouchableOpacity>
             <View style={{ height: 24 }} />
           </ScrollView>
-        </View>
-      </TouchableOpacity>
+      </View>
     </TouchableOpacity>
   );
 }

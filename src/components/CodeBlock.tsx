@@ -433,11 +433,9 @@ function SoundPickerSheet({
   const userRows = userSounds.map(s => ({ fileKey: s.name, name: s.name, emoji: '🎙️' }));
 
   return (
-    <TouchableOpacity style={styles.spOverlay} onPress={onClose} activeOpacity={1}>
-      <View
-        style={[styles.spSheet, { maxHeight: height * 0.72 }]}
-        onStartShouldSetResponder={() => true}
-      >
+    <View style={styles.spOverlay}>
+      <TouchableOpacity style={styles.spBackdrop} onPress={onClose} activeOpacity={1} />
+      <View style={[styles.spSheet, { maxHeight: height * 0.72 }]}>
           {/* Header */}
           <View style={styles.spHeader}>
             <Text style={styles.spTitle}>🎵 Escolher Som</Text>
@@ -565,7 +563,7 @@ function SoundPickerSheet({
             <View style={{ height: 24 }} />
           </ScrollView>
       </View>
-    </TouchableOpacity>
+    </View>
   );
 }
 
@@ -805,6 +803,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'flex-end',
+  },
+  spBackdrop: {
+    flex: 1,
   },
   spSheet: {
     backgroundColor: '#FFF',

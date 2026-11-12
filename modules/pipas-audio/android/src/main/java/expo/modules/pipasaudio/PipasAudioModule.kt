@@ -83,19 +83,20 @@ class PipasAudioModule : Module() {
         player.setOnCompletionListener { it.release(); players.remove(key) }
         players[key] = player
         player.start()
-        // Delayed echo: replay at 40% volume after 280ms
+        // Echo prepared and started on main thread inside postDelayed — avoids cross-thread MediaPlayer issues
         Handler(Looper.getMainLooper()).postDelayed({
           try {
             val echoKey = "__echo__$path"
+            players[echoKey]?.let { try { it.stop(); it.release() } catch (_: Exception) {} }
             val echo = MediaPlayer()
             echo.setDataSource(path)
             echo.prepare()
-            echo.setVolume(0.4f, 0.4f)
+            echo.setVolume(0.65f, 0.65f)
             echo.setOnCompletionListener { it.release(); players.remove(echoKey) }
             players[echoKey] = echo
             echo.start()
           } catch (_: Exception) {}
-        }, 280)
+        }, 300)
         promise.resolve(null)
       } catch (e: Exception) {
         promise.reject("PLAY_ERROR", e.message ?: "Erro ao tocar arquivo", e)
@@ -110,29 +111,59 @@ class PipasAudioModule : Module() {
         player.setDataSource(path)
         player.prepare()
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-          val params = android.media.PlaybackParams().setSpeed(0.85f)
-          player.playbackParams = params
+          player.playbackParams = android.media.PlaybackParams().setSpeed(0.7f)
         }
         player.setOnCompletionListener { it.release(); players.remove(key) }
         players[key] = player
         player.start()
-        // Short rapid echo at 40ms gives a mechanical/robotic stutter
-        Handler(Looper.getMainLooper()).postDelayed({
+        val handler = Handler(Looper.getMainLooper())
+        // Both echo players prepared and started on main thread inside their postDelayed callbacks
+        handler.postDelayed({
           try {
-            val echoKey = "__robot__$path"
-            val echo = MediaPlayer()
-            echo.setDataSource(path)
-            echo.prepare()
-            echo.setVolume(0.6f, 0.6f)
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-              val params = android.media.PlaybackParams().setSpeed(0.85f)
-              echo.playbackParams = params
-            }
-            echo.setOnCompletionListener { it.release(); players.remove(echoKey) }
-            players[echoKey] = echo
-            echo.start()
+            val k = "__robot1__$path"
+            players[k]?.let { try { it.stop(); it.release() } catch (_: Exception) {} }
+            val e = MediaPlayer(); e.setDataSource(path); e.prepare(); e.setVolume(0.9f, 0.9f)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) e.playbackParams = android.media.PlaybackParams().setSpeed(0.7f)
+            e.setOnCompletionListener { it.release(); players.remove(k) }; players[k] = e; e.start()
           } catch (_: Exception) {}
-        }, 40)
+        }, 55)
+        handler.postDelayed({
+          try {
+            val k = "__robot2__$path"
+            players[k]?.let { try { it.stop(); it.release() } catch (_: Exception) {} }
+            val e = MediaPlayer(); e.setDataSource(path); e.prepare(); e.setVolume(0.7f, 0.7f)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) e.playbackParams = android.media.PlaybackParams().setSpeed(0.7f)
+            e.setOnCompletionListener { it.release(); players.remove(k) }; players[k] = e; e.start()
+          } catch (_: Exception) {}
+        }, 115)
+        promise.resolve(null)
+      } catch (e: Exception) {
+        promise.reject("PLAY_ERROR", e.message ?: "Erro ao tocar arquivo", e)
+      }
+    }
+
+    AsyncFunction("playFileWithReverb") { path: String, promise: expo.modules.kotlin.Promise ->
+      try {
+        val key = "__file__$path"
+        players[key]?.let { try { it.stop(); it.release() } catch (_: Exception) {} }
+        val player = MediaPlayer()
+        player.setDataSource(path)
+        player.prepare()
+        player.setOnCompletionListener { it.release(); players.remove(key) }
+        players[key] = player
+        player.start()
+        val handler = Handler(Looper.getMainLooper())
+        listOf(Triple(60L, "__rev1__$path", 0.75f), Triple(140L, "__rev2__$path", 0.55f),
+               Triple(250L, "__rev3__$path", 0.35f), Triple(400L, "__rev4__$path", 0.18f)
+        ).forEach { (delay, k, vol) ->
+          handler.postDelayed({
+            try {
+              players[k]?.let { try { it.stop(); it.release() } catch (_: Exception) {} }
+              val echo = MediaPlayer(); echo.setDataSource(path); echo.prepare(); echo.setVolume(vol, vol)
+              echo.setOnCompletionListener { it.release(); players.remove(k) }; players[k] = echo; echo.start()
+            } catch (_: Exception) {}
+          }, delay)
+        }
         promise.resolve(null)
       } catch (e: Exception) {
         promise.reject("PLAY_ERROR", e.message ?: "Erro ao tocar arquivo", e)

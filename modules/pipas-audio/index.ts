@@ -18,6 +18,9 @@ export const PipasAudio = {
   playFileWithRobot(path: string): Promise<void> {
     return NativeModule.playFileWithRobot(path);
   },
+  playFileWithReverb(path: string): Promise<void> {
+    return NativeModule.playFileWithReverb(path);
+  },
   playFileWithTrim(path: string, trimStart: number, trimEnd: number, speed: number): Promise<void> {
     return NativeModule.playFileWithTrim(path, trimStart, trimEnd, speed);
   },

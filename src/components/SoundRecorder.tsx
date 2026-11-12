@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Animated, Platform,
-  TextInput, ScrollView, PanResponder, KeyboardAvoidingView,
+  TextInput, ScrollView, PanResponder, KeyboardAvoidingView, useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PermissionsAndroid } from 'react-native';
@@ -11,11 +11,13 @@ interface Props {
   onCancel: () => void;
   onSave: (name: string, uri?: string, duration?: number) => void;
   onDelete?: () => void;
-  editSound?: { uri: string; name: string };
+  editSound?: { uri: string; name: string; duration?: number };
 }
 
 type Stage  = 'idle' | 'recording' | 'preview';
 type Effect = 'fast' | 'slow' | 'echo' | 'robot' | null;
+type SpeedEffect   = 'fast' | 'slow' | null;
+type OverlayEffect = 'echo' | 'reverb';
 
 export const TEAL = '#5BC4D1';
 const TRACK_H     = 100;
@@ -174,6 +176,15 @@ const EFFECT_SPEEDS: Record<string, number> = { fast: 1.7, slow: 0.55 };
 
 function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
   const { userSounds } = useApp();
+  const insets = useSafeAreaInsets();
+  const { height: screenH } = useWindowDimensions();
+  // Scale 0–1: 0 = very short screen (≤600), 1 = tall screen (≥800)
+  const spacingScale = Math.min(1, Math.max(0, (screenH - 600) / 200));
+  const sp = (tall: number, short: number) => Math.round(short + (tall - short) * spacingScale);
+  const waveH = sp(80, 56);         // waveform height
+  const vGap  = sp(20, 8);          // vertical gaps between sections
+  const chipPy = sp(10, 7);         // effect chip vertical padding
+  const timerMb = sp(14, 6);        // timer margin-bottom
 
   const defaultName = () => {
     if (editSound) return editSound.name;
@@ -187,7 +198,7 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
   const [seconds, setSeconds]       = useState(0);
   const [isPlaying, setIsPlaying]   = useState(false);
   const [playPos, setPlayPos]       = useState(0); // 0–1 playback progress
-  const [duration, setDuration]     = useState(0); // seconds
+  const [duration, setDuration]     = useState(editSound?.duration ?? 0); // seconds
   const [soundName, setSoundName]   = useState(defaultName);
   const [error, setError]           = useState<string | null>(null);
   const [ampBars, setAmpBars]       = useState<number[]>(Array(BAR_COUNT).fill(0));
@@ -196,7 +207,9 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
     ? Array.from({ length: BAR_COUNT }, (_, i) => 0.3 + 0.5 * Math.abs(Math.sin(i * 0.7 + 1.3)))
     : Array(BAR_COUNT).fill(0);
   const [frozenBars, setFrozenBars] = useState<number[]>(editPlaceholderBars);
-  const [activeEffect, setActiveEffect] = useState<string | null>(null);
+  const [speedEffect,    setSpeedEffect]    = useState<SpeedEffect>(null);
+  const [overlayEffects, setOverlayEffects] = useState<OverlayEffect[]>([]);
+  const [isRendering,   setIsRendering]     = useState(false);
   const [trimStart, setTrimStart]   = useState(0);
   const [trimEnd,   setTrimEnd]     = useState(1);
   const [trackW,    setTrackW]      = useState(300);
@@ -210,14 +223,17 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
   const ampHistRef   = useRef<number[]>(Array(BAR_COUNT).fill(0));
   const trimStartRef = useRef(0);
   const trimEndRef   = useRef(1);
-  const activeEffectRef = useRef<string | null>(null);
-  const isPlayingRef    = useRef(false); // avoids stale closure in togglePlay
+  const speedEffectRef    = useRef<SpeedEffect>(null);
+  const overlayEffectsRef = useRef<OverlayEffect[]>([]);
+  const isPlayingRef      = useRef(false); // avoids stale closure in togglePlay
   const recordStartRef  = useRef(0);    // Date.now() when recording started
   // Drag state
-  const dragWhichRef   = useRef<'start' | 'end' | null>(null);
-  const dragInitValRef = useRef(0);
+  const dragWhichRef      = useRef<'start' | 'end' | null>(null);
+  const dragInitValRef    = useRef(0);
+  const playFullTrackRef  = useRef(false); // true when effects override trim for preview
 
-  useEffect(() => { activeEffectRef.current = activeEffect; }, [activeEffect]);
+  useEffect(() => { speedEffectRef.current    = speedEffect;    }, [speedEffect]);
+  useEffect(() => { overlayEffectsRef.current = overlayEffects; }, [overlayEffects]);
 
   // When in edit mode, pre-populate the file path reference
   useEffect(() => {
@@ -243,10 +259,12 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
         Animated.timing(pulse, { toValue: 1,   duration: 700, useNativeDriver: true }),
       ])).start();
       ampPollRef.current = setInterval(() => {
-        const amp  = getPipasRecording().getMaxAmplitude();
-        const norm = Math.min(1, amp / 20000);
-        ampHistRef.current = [...ampHistRef.current.slice(1), norm];
-        setAmpBars([...ampHistRef.current]);
+        try {
+          const amp  = getPipasRecording().getMaxAmplitude() as number;
+          const norm = Math.min(1, amp / 20000);
+          ampHistRef.current = [...ampHistRef.current.slice(1), norm];
+          setAmpBars([...ampHistRef.current]);
+        } catch (_) {}
       }, 100);
     } else {
       if (timerRef.current)   clearInterval(timerRef.current);
@@ -266,7 +284,8 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
     setError(null); setSeconds(0);
     ampHistRef.current = Array(BAR_COUNT).fill(0);
     setAmpBars(Array(BAR_COUNT).fill(0));
-    setActiveEffect(null);
+    setSpeedEffect(null); speedEffectRef.current = null;
+    setOverlayEffects([]); overlayEffectsRef.current = [];
     trimStartRef.current = 0; trimEndRef.current = 1;
     setTrimStart(0); setTrimEnd(1);
     try {
@@ -307,6 +326,9 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
         ? (Date.now() - recordStartRef.current) / 1000
         : Math.max(seconds, 0.5);
       setDuration(actualDuration);
+      // Always start preview with full trim so effects aren't accidentally bypassed
+      trimStartRef.current = 0; trimEndRef.current = 1;
+      setTrimStart(0); setTrimEnd(1);
       setStage('preview');
     } catch (e: any) {
       setError(e?.message ?? 'Erro ao parar gravação.');
@@ -316,7 +338,9 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
 
   const stopPlayback = () => {
     isPlayingRef.current = false;
+    playFullTrackRef.current = false;
     setIsPlaying(false);
+    setIsRendering(false);
     if (playPollRef.current) { clearInterval(playPollRef.current); playPollRef.current = null; }
     setPlayPos(0);
   };
@@ -332,6 +356,7 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
         clearInterval(playPollRef.current!);
         playPollRef.current = null;
         isPlayingRef.current = false;
+        playFullTrackRef.current = false;
         setIsPlaying(false);
         setPlayPos(0);
         // Ensure native audio is stopped so it doesn't keep playing
@@ -345,43 +370,61 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
     const path = filePathRef.current;
     if (!path) return;
     if (isPlayingRef.current) {
-      await getPipasAudio().stopFile(path).catch(() => {});
+      await getPipasAudio().stopAll().catch(() => {});
       stopPlayback();
     } else {
+      // Stop any lingering echo/robot players from a previous play
+      await getPipasAudio().stopAll().catch(() => {});
       isPlayingRef.current = true;
       setIsPlaying(true);
-      const eff   = activeEffectRef.current;
-      const speed = eff ? (EFFECT_SPEEDS[eff] ?? 1) : 1;
+      const spd     = speedEffectRef.current;
+      const ovl     = overlayEffectsRef.current;
+      const speed   = spd ? (EFFECT_SPEEDS[spd] ?? 1) : 1;
+      const hasEcho   = ovl.includes('echo');
+      const hasReverb = ovl.includes('reverb');
       const ts    = trimStartRef.current;
       const te    = trimEndRef.current;
       const totalDur = duration > 0 ? duration : seconds;
-      const trimmedDur = totalDur * (te - ts);
-      startPlayProgress(trimmedDur > 0 ? trimmedDur : totalDur, speed);
-      const hasTrim = ts > 0.001 || te < 0.999;
-      let playFn: Promise<void>;
-      if (hasTrim || (eff !== 'echo' && eff !== 'robot')) {
-        if (eff === 'echo') {
-          playFn = hasTrim
-            ? getPipasAudio().playFileWithTrim(path, ts, te, speed)
-            : getPipasAudio().playFileWithEcho(path);
-        } else if (eff === 'robot') {
-          playFn = hasTrim
-            ? getPipasAudio().playFileWithTrim(path, ts, te, speed)
-            : getPipasAudio().playFileWithRobot(path);
-        } else {
-          playFn = getPipasAudio().playFileWithTrim(path, ts, te, speed);
-        }
-      } else if (eff === 'echo') {
-        playFn = getPipasAudio().playFileWithEcho(path);
-      } else if (eff === 'robot') {
-        playFn = getPipasAudio().playFileWithRobot(path);
-      } else if (speed !== 1) {
-        playFn = getPipasAudio().playFileAtSpeed(path, speed);
+      const baseDur  = totalDur * (te - ts) || totalDur;
+      const hasTrim  = ts > 0.08 || te < 0.92;
+      // Helper: effective playback seconds already accounting for speed
+      const effDur = (extra = 0) => baseDur / speed + extra;
+      const hasOverlay = hasEcho || hasReverb;
+      // Effects play the full file — cursor sweeps full track, trim applies at save time only.
+      playFullTrackRef.current = hasOverlay;
+      // Use renderWithEffects for effects OR speed, so preview always matches the saved output.
+      // ECO: 300ms/0.5 — distinct canyon echo. REVERB: 40ms/0.8 — comb filter (room sound).
+      const needsRender = hasOverlay || hasTrim || speed !== 1;
+      if (needsRender) {
+        const delayMs = hasEcho ? 300 : hasReverb ? 40 : 0;
+        const gain    = hasEcho ? 0.5  : hasReverb ? 0.8 : 0;
+        const suffix  = hasEcho ? 'eco' : hasReverb ? 'rv' : 'spd';
+        const tmpPath = path.replace(/\.[^.]+$/, `_${suffix}_tmp.m4a`);
+        setIsRendering(true);
+        getPipasAudio().renderWithEffects(path, tmpPath, speed, delayMs, gain, ts, te)
+          .then(() => {
+            setIsRendering(false);
+            if (!isPlayingRef.current) return;
+            // Use baseDur if known, else let native completion handle stop (no auto-stop)
+            if (baseDur > 0) startPlayProgress(baseDur / speed, 1);
+            return getPipasAudio().playFile(tmpPath);
+          })
+          .catch(() => {
+            setIsRendering(false);
+            if (!isPlayingRef.current) return;
+            // Fallback: play original file without processing
+            if (baseDur > 0) startPlayProgress(baseDur, 1);
+            return getPipasAudio().playFile(path);
+          });
+        // progress starts inside .then above
       } else {
-        playFn = getPipasAudio().playFile(path);
+        // No processing needed — play directly
+        if (baseDur > 0) {
+          startPlayProgress(baseDur, 1);
+        }
+        // If duration unknown (edit mode old sound), play will continue until user taps stop
+        getPipasAudio().playFile(path).catch((e) => console.error('[play] native error:', e));
       }
-      // Native promises resolve immediately (fire-and-forget) — don't use .finally for UI state
-      playFn.catch(() => {});
     }
   };
 
@@ -394,7 +437,8 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
     setAmpBars(Array(BAR_COUNT).fill(0));
     setFrozenBars(Array(BAR_COUNT).fill(0));
     ampHistRef.current = Array(BAR_COUNT).fill(0);
-    setActiveEffect(null);
+    setSpeedEffect(null); speedEffectRef.current = null;
+    setOverlayEffects([]); overlayEffectsRef.current = [];
     trimStartRef.current = 0; trimEndRef.current = 1;
     setTrimStart(0); setTrimEnd(1);
   };
@@ -402,16 +446,20 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
   const handleSave = async () => {
     const path = filePathRef.current;
     if (!path) return;
-    const eff   = activeEffectRef.current;
-    const ts    = trimStartRef.current;
-    const te    = trimEndRef.current;
-    const needsRender = Platform.OS !== 'web' && (eff != null || ts > 0.001 || te < 0.999);
+    const spd      = speedEffectRef.current;
+    const ovl      = overlayEffectsRef.current;
+    const ts       = trimStartRef.current;
+    const te       = trimEndRef.current;
+    const hasEffect = spd != null || ovl.length > 0;
+    const needsRender = Platform.OS !== 'web' && (hasEffect || ts > 0.001 || te < 0.999);
     if (needsRender) {
       try {
-        const fixedOut = path.replace(/\.[^.]+$/, '_fx.m4a');
-        const speed       = eff ? (EFFECT_SPEEDS[eff] ?? 1) : 1;
-        const echoDelayMs = eff === 'echo' ? 280 : eff === 'robot' ? 40 : 0;
-        const echoGain    = eff === 'echo' ? 0.4  : eff === 'robot' ? 0.6 : 0;
+        const fixedOut    = path.replace(/\.[^.]+$/, '_fx.m4a');
+        const speed       = spd ? (EFFECT_SPEEDS[spd] ?? 1) : 1;
+        const hasEcho     = ovl.includes('echo');
+        const hasReverb   = ovl.includes('reverb');
+        const echoDelayMs = hasEcho ? 300 : hasReverb ? 40  : 0;
+        const echoGain    = hasEcho ? 0.5  : hasReverb ? 0.8 : 0;
         await getPipasAudio().renderWithEffects(path, fixedOut, speed, echoDelayMs, echoGain, ts, te);
         onSave(soundName || 'Gravação', fixedOut, duration > 0 ? duration : seconds);
       } catch (_e) {
@@ -424,12 +472,23 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
 
   // Trim PanResponder — uses gestureState.dx delta so it works reliably on Android
   const trimPanResponder = useMemo(() => PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder:  () => true,
-    onPanResponderGrant: (_e, gs) => {
-      // Identify which handle is closer to touch point
+    onStartShouldSetPanResponder: (_e) => {
+      // Only activate when touch is within 36px of a handle
       const w = trackW || 300;
-      // locationX may not be reliable; estimate from absolute position
+      const locX = (_e.nativeEvent as any).locationX ?? 0;
+      const startPx = trimStartRef.current * w;
+      const endPx   = trimEndRef.current   * w;
+      return Math.abs(locX - startPx) < 36 || Math.abs(locX - endPx) < 36;
+    },
+    onMoveShouldSetPanResponder: (_e) => {
+      const w = trackW || 300;
+      const locX = (_e.nativeEvent as any).locationX ?? 0;
+      const startPx = trimStartRef.current * w;
+      const endPx   = trimEndRef.current   * w;
+      return Math.abs(locX - startPx) < 36 || Math.abs(locX - endPx) < 36;
+    },
+    onPanResponderGrant: (_e, _gs) => {
+      const w = trackW || 300;
       const locX = (_e.nativeEvent as any).locationX ?? 0;
       const pos  = Math.max(0, Math.min(1, locX / w));
       if (Math.abs(pos - trimStartRef.current) <= Math.abs(pos - trimEndRef.current)) {
@@ -467,13 +526,19 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'android' ? 'height' : 'padding'} style={{ flex: 1 }}>
     <View style={nStyles.wrap}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ flexGrow: 1, paddingBottom: 8 }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
 
       {/* Timer */}
-      <Text style={nStyles.timer}>{fmt(seconds)}</Text>
+      <Text style={[nStyles.timer, { marginBottom: timerMb }]}>{fmt(seconds)}</Text>
 
       {/* Waveform — clipped inner box + unclipped bracket overlay */}
       <View
-        style={nStyles.waveOuter}
+        style={[nStyles.waveOuter, { height: waveH }]}
         onLayout={e => setTrackW(e.nativeEvent.layout.width)}
       >
         {/* Bars + dim overlays — clipped to rounded rect */}
@@ -495,7 +560,7 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
               );
             })}
           </View>
-          {isPreview && (
+          {isPreview && overlayEffects.length === 0 && (
             <>
               <View style={[nStyles.dimOverlay, { left: 0, width: Math.max(0, startPx) }]} />
               <View style={[nStyles.dimOverlay, { right: 0, width: Math.max(0, trackW - endPx) }]} />
@@ -503,19 +568,25 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
           )}
         </View>
 
-        {/* Trim handles — invisible touch zones + thin line indicators */}
+        {/* Trim handles — full-area pan responder + visual handle tabs */}
         {isPreview && (
-          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10, overflow: 'hidden' }}
+          <View style={{ position: 'absolute', top: -12, left: -8, right: -8, bottom: -12, zIndex: 10 }}
                 {...trimPanResponder.panHandlers}>
-            {/* Left trim line */}
-            <View style={{ position: 'absolute', top: 0, bottom: 0, left: Math.max(0, startPx - 1), width: 2, backgroundColor: 'rgba(255,255,255,0.7)', borderRadius: 1 }} />
-            {/* Right trim line */}
-            <View style={{ position: 'absolute', top: 0, bottom: 0, left: Math.min(trackW - 2, endPx - 1), width: 2, backgroundColor: 'rgba(255,255,255,0.7)', borderRadius: 1 }} />
+            {/* Left handle: vertical bar + tab */}
+            <View style={{ position: 'absolute', top: 12, bottom: 12, left: 8 + Math.max(0, startPx) - 2, width: 3, backgroundColor: '#FFF', borderRadius: 2 }} />
+            <View style={{ position: 'absolute', top: 12, left: 8 + Math.max(0, startPx) - 10, width: 20, height: 20, backgroundColor: '#FFF', borderRadius: 4 }} />
+            {/* Right handle: vertical bar + tab */}
+            <View style={{ position: 'absolute', top: 12, bottom: 12, left: 8 + Math.min(trackW - 2, endPx) - 1, width: 3, backgroundColor: '#FFF', borderRadius: 2 }} />
+            <View style={{ position: 'absolute', top: 12, left: 8 + Math.min(trackW - 3, endPx) - 10, width: 20, height: 20, backgroundColor: '#FFF', borderRadius: 4 }} />
             {/* Playback progress cursor */}
             {isPlaying && (
               <View style={{
-                position: 'absolute', top: 0, bottom: 0,
-                left: Math.min(trackW - 2, Math.max(0, startPx + (endPx - startPx) * playPos - 1)),
+                position: 'absolute', top: 12, bottom: 12,
+                left: 8 + Math.min(trackW - 2, Math.max(0, (
+                  playFullTrackRef.current
+                    ? trackW * playPos               // effects: sweep full track
+                    : startPx + (endPx - startPx) * playPos  // trim-only: sweep trim window
+                ) - 1)),
                 width: 2, backgroundColor: '#FFD700', borderRadius: 1,
                 zIndex: 20,
               }} />
@@ -524,14 +595,15 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
         )}
       </View>
 
-      {/* Equal flex space above and below the play/record button */}
-      <View style={{ flex: 1 }} />
+      <View style={{ height: vGap }} />
 
       {/* Record / Stop / Play button */}
       <View style={nStyles.actionRow}>
         {isPreview ? (
-          <TouchableOpacity style={[nStyles.circleBtn, nStyles.circlePrimary]} onPress={togglePlay}>
-            <Text style={nStyles.circleIcon}>{isPlaying ? '■' : '▶'}</Text>
+          <TouchableOpacity style={[nStyles.circleBtn, nStyles.circlePrimary]} onPress={isRendering ? undefined : togglePlay} activeOpacity={isRendering ? 1 : 0.85}>
+            {isRendering
+              ? <Text style={[nStyles.circleIcon, { fontSize: 10 }]}>{'...'}</Text>
+              : <Text style={nStyles.circleIcon}>{isPlaying ? '■' : '▶'}</Text>}
           </TouchableOpacity>
         ) : isRecording ? (
           <Animated.View style={{ transform: [{ scale: pulse }] }}>
@@ -550,19 +622,52 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
         <Text style={nStyles.hint}>{isIdle ? 'Toque para gravar' : 'Toque para parar'}</Text>
       )}
 
-      {/* Equal spacer above and below play button — flex fills remaining space and splits it */}
-      <View style={{ flex: 1 }} />
+      <View style={{ height: vGap }} />
 
-      {/* Effects — all 4 selectable; fast/slow change speed, echo plays twice */}
-      <Text style={nStyles.sectionLabel}>Efeitos sonoros</Text>
-      <View style={nStyles.effectsRow}>
-        {EFFECTS.map(({ id, label }) => {
-          const isActive = activeEffect === id;
+      {/* Speed — radio buttons (mutually exclusive) */}
+      <Text style={nStyles.sectionLabel}>Velocidade</Text>
+      <View style={[nStyles.effectsRow, { marginBottom: vGap }]}>
+        {([
+          { id: null       as SpeedEffect, label: 'NORMAL' },
+          { id: 'fast'     as SpeedEffect, label: 'RÁPIDO' },
+          { id: 'slow'     as SpeedEffect, label: 'LENTO'  },
+        ]).map(({ id, label }) => {
+          const isActive = speedEffect === id;
+          return (
+            <TouchableOpacity
+              key={label}
+              style={[nStyles.effectChip, nStyles.radioChip, isActive && nStyles.effectChipActive, { paddingVertical: chipPy }]}
+              onPress={isPreview ? () => { speedEffectRef.current = id; setSpeedEffect(id); } : undefined}
+              activeOpacity={isPreview ? 0.8 : 1}
+            >
+              <View style={nStyles.radioOuter}>
+                {isActive && <View style={nStyles.radioInner} />}
+              </View>
+              <Text style={[nStyles.effectLabel, isActive && nStyles.effectLabelActive]}>{label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {/* Overlay effects — independent toggles (can stack) */}
+      <Text style={[nStyles.sectionLabel, { marginTop: 0 }]}>Efeitos</Text>
+      <View style={[nStyles.effectsRow, { marginBottom: vGap }]}>
+        {([
+          { id: 'echo'   as OverlayEffect, label: 'ECO'    },
+          { id: 'reverb' as OverlayEffect, label: 'REVERB' },
+        ]).map(({ id, label }) => {
+          const isActive = overlayEffects.includes(id);
           return (
             <TouchableOpacity
               key={id}
-              style={[nStyles.effectChip, isActive && nStyles.effectChipActive]}
-              onPress={isPreview ? () => setActiveEffect(isActive ? null : id) : undefined}
+              style={[nStyles.effectChip, isActive && nStyles.effectChipActive, { paddingVertical: chipPy }]}
+              onPress={isPreview ? () => {
+                const next = overlayEffects.includes(id)
+                  ? overlayEffects.filter(e => e !== id)
+                  : [...overlayEffects, id];
+                overlayEffectsRef.current = next;
+                setOverlayEffects(next);
+              } : undefined}
               activeOpacity={isPreview ? 0.8 : 1}
             >
               <Text style={[nStyles.effectLabel, isActive && nStyles.effectLabelActive]}>{label}</Text>
@@ -584,8 +689,10 @@ function NativeSoundRecorder({ onCancel, onSave, onDelete, editSound }: Props) {
 
       {error && <Text style={nStyles.errorText}>{error}</Text>}
 
-      {/* CTA bar */}
-      <View style={nStyles.ctaBar}>
+      </ScrollView>
+
+      {/* CTA bar — pinned at bottom, above Android nav bar */}
+      <View style={[nStyles.ctaBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
         {editSound ? (
           // Edit mode: SAVE | DELETE | CANCEL
           <>
@@ -642,14 +749,13 @@ const nStyles = StyleSheet.create({
 
   timer: { fontSize: 26, fontWeight: '200', color: '#FFF', letterSpacing: 3, textAlign: 'center', marginBottom: 10 },
 
-  // waveOuter: no overflow clipping so brackets are never cut off
-  waveOuter: { width: '100%', height: WAVE_H, marginBottom: 16 },
+  waveOuter: { width: '100%', marginBottom: 0, overflow: 'visible' },
   // waveWrap: clips the bars and dim overlays to rounded rect
   waveWrap:  {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     borderRadius: 10, backgroundColor: '#111', overflow: 'hidden',
   },
-  barsRow:   { height: WAVE_H, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, gap: 2 },
+  barsRow:   { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, gap: 2 },
 
   dimOverlay: { position: 'absolute', top: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)' },
   bracketV:   { position: 'absolute', top: 0, bottom: 0, width: BKT_W, backgroundColor: '#FFF' },
@@ -673,20 +779,23 @@ const nStyles = StyleSheet.create({
   hint: { fontSize: 12, color: 'rgba(255,255,255,0.4)', textAlign: 'center', marginTop: 4 },
 
   sectionLabel: { fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.4)', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 },
-  effectsRow:   { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  effectsRow:   { flexDirection: 'row', gap: 8, marginBottom: 0 },
   effectChip:        { flex: 1, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.08)', paddingVertical: 9, alignItems: 'center' },
   effectChipActive:  { backgroundColor: TEAL },
   effectLabel:       { fontSize: 11, fontWeight: '800', color: 'rgba(255,255,255,0.45)', letterSpacing: 0.5 },
   effectLabelActive: { color: '#FFF' },
+  radioChip:    { flexDirection: 'row', gap: 6, justifyContent: 'center' },
+  radioOuter:   { width: 14, height: 14, borderRadius: 7, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.4)', alignItems: 'center', justifyContent: 'center' },
+  radioInner:   { width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#FFF' },
 
   nameInput: {
     borderBottomWidth: 1.5, borderBottomColor: 'rgba(255,255,255,0.4)',
     paddingVertical: 8, fontSize: 16, color: '#FFF', fontWeight: '500',
-    backgroundColor: 'transparent', marginBottom: 32,
+    backgroundColor: 'transparent', marginBottom: 16,
   },
   errorText: { color: '#EF4444', fontSize: 13, textAlign: 'center', marginBottom: 8 },
 
-  ctaBar: {},
+  ctaBar: { paddingTop: 12, paddingHorizontal: 0, backgroundColor: '#000' },
   saveBtn:         { borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   saveBtnActive:   { backgroundColor: TEAL },
   saveBtnInactive: { backgroundColor: 'rgba(255,255,255,0.07)' },

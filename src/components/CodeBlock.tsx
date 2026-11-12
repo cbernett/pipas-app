@@ -7,6 +7,7 @@ import { WorkspaceBlock, useApp } from '../context/AppContext';
 import { BLOCK_TEMPLATES, BlockParamDef } from '../data/blocks';
 import { SOUND_SECTIONS, QUICK_PICKS, EMOJI_FOR, NAME_FOR, ALL_SOUNDS } from '../data/soundData';
 import { playSound } from '../audio';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export const TAB_W      = 36;
 export const TAB_H      = 9;   // reduced — indent is less deep
@@ -411,6 +412,7 @@ function SoundPickerSheet({
   onRecord: () => void;
 }) {
   const { height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [preview, setPreview] = useState<string | null>(null);
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
@@ -435,7 +437,7 @@ function SoundPickerSheet({
   return (
     <View style={styles.spOverlay}>
       <TouchableOpacity style={styles.spBackdrop} onPress={onClose} activeOpacity={1} />
-      <View style={[styles.spSheet, { maxHeight: height * 0.72 }]}>
+      <View style={[styles.spSheet, { height: height * 0.72 }]}>
           {/* Header */}
           <View style={styles.spHeader}>
             <Text style={styles.spTitle}>🎵 Escolher Som</Text>
@@ -560,7 +562,7 @@ function SoundPickerSheet({
             <TouchableOpacity style={styles.spRecordBtn} onPress={onRecord} activeOpacity={0.8}>
               <Text style={styles.spRecordBtnText}>🎙️  Gravar meu som</Text>
             </TouchableOpacity>
-            <View style={{ height: 24 }} />
+            <View style={{ height: 24 + insets.bottom }} />
           </ScrollView>
       </View>
     </View>

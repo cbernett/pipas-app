@@ -84,7 +84,7 @@ export default function SonsScreen() {
             onCancel={closeDrawer}
             onSave={handleSave}
             onDelete={editingSound ? () => handleDelete(editingSound.id) : undefined}
-            editSound={editingSound ? { uri: editingSound.uri!, name: editingSound.name } : undefined}
+            editSound={editingSound ? { uri: editingSound.uri!, name: editingSound.name, duration: editingSound.duration } : undefined}
           />
         </Animated.View>
       )}

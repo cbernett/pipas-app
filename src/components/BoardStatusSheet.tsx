@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Modal, View, Text, TouchableOpacity, StyleSheet, Pressable, ScrollView, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 import { useApp, BoardStatus } from '../context/AppContext';
 import { board } from '../serial';
 
@@ -131,6 +132,7 @@ export default function BoardStatusSheet() {
   const statusColor =
     boardStatus === 'connected' ? '#22C55E' :
     boardStatus === 'error'     ? '#EF4444' : 'rgba(255,255,255,0.4)';
+  const appVersion = Constants.expoConfig?.version;
 
   return (
     <>
@@ -165,7 +167,7 @@ export default function BoardStatusSheet() {
         <Pressable style={styles.sheetOuter} onPress={e => e.stopPropagation()}>
           <ScrollView
             style={styles.sheetScroll}
-            contentContainerStyle={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}
+            contentContainerStyle={styles.sheet}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
@@ -251,6 +253,9 @@ export default function BoardStatusSheet() {
               </ScrollView>
             </View>
           </ScrollView>
+          <Text style={[styles.appVersion, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+            Versão {typeof appVersion === 'string' && appVersion.trim() ? appVersion : 'indisponível'}
+          </Text>
         </Pressable>
       </Pressable>
     </Modal>
@@ -312,6 +317,7 @@ const styles = StyleSheet.create({
   },
   sheetScroll: {
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    flexShrink: 1,
   },
   // Content container inside the ScrollView
   sheet: {
@@ -347,6 +353,13 @@ const styles = StyleSheet.create({
   },
   monitorEmpty: { color: 'rgba(255,255,255,0.3)', fontSize: 12, fontStyle: 'italic' },
   monitorLine: { color: '#22C55E', fontSize: 12, fontFamily: 'monospace', lineHeight: 18 },
+  appVersion: {
+    color: 'rgba(255,255,255,0.38)',
+    fontSize: 11,
+    paddingHorizontal: 24,
+    paddingTop: 4,
+    textAlign: 'right',
+  },
   errorHint: {
     color: '#FCA5A5',
     fontSize: 13,

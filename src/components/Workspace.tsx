@@ -18,6 +18,7 @@ function NativeStackDragger({
   onTap,
   onSplitStart,
   onSplitCancel,
+  onNativeTouchChange,
   splitOverlayX,
   splitOverlayY,
   children,
@@ -28,6 +29,7 @@ function NativeStackDragger({
   onTap: (touchedY: number) => void;
   onSplitStart: (stackId: string, touchedY: number) => { x: number; y: number } | null;
   onSplitCancel: (stackId: string) => void;
+  onNativeTouchChange: (active: boolean) => void;
   splitOverlayX: Animated.Value;
   splitOverlayY: Animated.Value;
   children: React.ReactNode;
@@ -40,12 +42,14 @@ function NativeStackDragger({
   const onTapRef          = useRef(onTap);
   const onSplitStartRef   = useRef(onSplitStart);
   const onSplitCancelRef  = useRef(onSplitCancel);
+  const onNativeTouchChangeRef = useRef(onNativeTouchChange);
   stackIdRef.current       = stack.id;
   onDragEndRef.current     = onDragEnd;
   onDragMoveRef.current    = onDragMove;
   onTapRef.current         = onTap;
   onSplitStartRef.current  = onSplitStart;
   onSplitCancelRef.current = onSplitCancel;
+  onNativeTouchChangeRef.current = onNativeTouchChange;
 
   const didMove           = useRef(false);
   const initialTouchY     = useRef(0);
@@ -138,6 +142,9 @@ function NativeStackDragger({
           stackPageY.current = pageY;
         });
       }}
+      onTouchStart={() => onNativeTouchChangeRef.current(true)}
+      onTouchEnd={() => onNativeTouchChangeRef.current(false)}
+      onTouchCancel={() => onNativeTouchChangeRef.current(false)}
       {...responder.panHandlers}
     >
       {children}
@@ -170,6 +177,7 @@ export default function Workspace() {
 
   // ── Drag/snap state ─────────────────────────────────────────────────────
   const [draggingId,      setDraggingId]      = useState<string | null>(null);
+  const [nativeTouchActive, setNativeTouchActive] = useState(false);
   const [snapTargetId,    setSnapTargetId]    = useState<string | null>(null);
   const [bracketHoverId,  setBracketHoverId]  = useState<string | null>(null);
   const bracketHoverRef   = useRef<string | null>(null);
@@ -215,16 +223,43 @@ export default function Workspace() {
     bi: number;
   } | null>(null);
   const stackHeightsRef = useRef<Record<string, number>>({});          // total stack height
+  const stackWidthsRef  = useRef<Record<string, number>>({});
   const blockHeightsRef = useRef<Record<string, number[]>>({});        // [block heights] per stack
+  const [canvasSize, setCanvasSize] = useState({ width: CANVAS_W, height: CANVAS_H });
   const canvasRef       = useRef<any>(null);
+  const horizontalScrollRef = useRef<ScrollView>(null);
+  const verticalScrollRef   = useRef<ScrollView>(null);
   const canvasPagePos   = useRef({ x: 0, y: 0 });
   const scrollOffset    = useRef({ x: 0, y: 0 });
+  const pendingCanvasPan = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    scrollX: number;
+    scrollY: number;
+  } | null>(null);
   const addStackRef     = useRef(addStack);
   useEffect(() => { addStackRef.current = addStack; }, [addStack]);
 
   // useLayoutEffect fires synchronously after DOM mutations and before paint,
   // so localStacksRef is always current by the time the user can interact.
   useLayoutEffect(() => { localStacksRef.current = displayStacks; }, [displayStacks]);
+
+  const updateCanvasBounds = useCallback((currentStacks: BlockStack[]) => {
+    let width = CANVAS_W;
+    let height = CANVAS_H;
+    for (const stack of currentStacks) {
+      width = Math.max(width, stack.x + (stackWidthsRef.current[stack.id] ?? 160) + 16);
+      height = Math.max(height, stack.y + (stackHeightsRef.current[stack.id] ?? 44) + 16);
+    }
+    setCanvasSize(previous => previous.width === width && previous.height === height
+      ? previous
+      : { width, height });
+  }, []);
+
+  useLayoutEffect(() => {
+    updateCanvasBounds(displayStacks);
+  }, [displayStacks, updateCanvasBounds]);
 
   // ── Wire up native library drag bridge (Android only) ───────────────────
   useEffect(() => {
@@ -274,9 +309,13 @@ export default function Workspace() {
   // Convert clientXY → canvas coords (accounting for scroll)
   const toCanvas = useCallback((cx: number, cy: number) => {
     const off = canvasTopLeft();
+    // On web the canvas DOM rect already moves with ScrollView content. Native
+    // measure() is anchored to the page, so its content offset must be added.
+    const nativeScrollX = Platform.OS === 'web' ? 0 : scrollOffset.current.x;
+    const nativeScrollY = Platform.OS === 'web' ? 0 : scrollOffset.current.y;
     return {
-      x: cx - off.x + scrollOffset.current.x,
-      y: cy - off.y + scrollOffset.current.y,
+      x: cx - off.x + nativeScrollX,
+      y: cy - off.y + nativeScrollY,
     };
   }, [canvasTopLeft]);
 
@@ -481,8 +520,22 @@ export default function Workspace() {
       (window as any).__libDrag = null;
       setLibDragBlock(null);
 
-      const hit = stackAt(e.clientX, e.clientY);
-      if (!hit) return;
+      const isInsideStack = !!target.closest?.('[id^="workspace-stack-"]');
+      const hit = isInsideStack ? stackAt(e.clientX, e.clientY) : null;
+      if (!hit) {
+        const panSurface = target.closest?.('#workspace-pan-surface');
+        if (Platform.OS === 'web' && e.pointerType === 'mouse' && panSurface && e.button === 0) {
+          pendingCanvasPan.current = {
+            pointerId: e.pointerId,
+            startX: e.clientX,
+            startY: e.clientY,
+            scrollX: scrollOffset.current.x,
+            scrollY: scrollOffset.current.y,
+          };
+          try { (panSurface as HTMLElement).setPointerCapture(e.pointerId); } catch {}
+        }
+        return;
+      }
       const { stack, relY } = hit;
       const blockIdx    = blockIdxAt(stack.id, relY);
       const clickedBlock = stack.blocks[blockIdx];
@@ -566,6 +619,16 @@ export default function Workspace() {
     };
 
     const onMove = (e: PointerEvent) => {
+      const canvasPan = pendingCanvasPan.current;
+      if (canvasPan?.pointerId === e.pointerId) {
+        const nextX = Math.max(0, canvasPan.scrollX - (e.clientX - canvasPan.startX));
+        const nextY = Math.max(0, canvasPan.scrollY - (e.clientY - canvasPan.startY));
+        scrollOffset.current = { x: nextX, y: nextY };
+        horizontalScrollRef.current?.scrollTo({ x: nextX, animated: false });
+        verticalScrollRef.current?.scrollTo({ y: nextY, animated: false });
+        return;
+      }
+
       // ── Library drag hover ────────────────────────────────────────────
       const ld = (window as any).__libDrag;
       if (ld?.active && ld?.hasMoved) {
@@ -628,6 +691,11 @@ export default function Workspace() {
     };
 
     const onUp = (e: PointerEvent) => {
+      if (pendingCanvasPan.current?.pointerId === e.pointerId) {
+        pendingCanvasPan.current = null;
+        return;
+      }
+
       // ── Library drag drop ─────────────────────────────────────────────
       const ld = (window as any).__libDrag;
       if (ld?.active && ld?.hasMoved) {
@@ -773,10 +841,13 @@ export default function Workspace() {
     document.addEventListener('pointerdown', onDown);
     document.addEventListener('pointermove', onMove);
     document.addEventListener('pointerup',   onUp);
+    document.addEventListener('pointercancel', onUp);
     return () => {
       document.removeEventListener('pointerdown', onDown);
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup',   onUp);
+      document.removeEventListener('pointercancel', onUp);
+      pendingCanvasPan.current = null;
     };
   }, [stackAt, blockIdxAt, accumHeight, toCanvas, findSnap, findBracketSnap,
       setStacks, dragAnimX, dragAnimY, tapBlock, triggerScript, setBracketHoverId]);
@@ -822,11 +893,16 @@ export default function Workspace() {
         <Text style={styles.fabIcon}>{isRunning ? '■' : '▶'}</Text>
       </TouchableOpacity>
 
+      <View
+        nativeID="workspace-pan-surface"
+        style={{ flex: 1 }}
+      >
       <ScrollView
+        ref={horizontalScrollRef}
         horizontal
         style={{ flex: 1 }}
-        contentContainerStyle={{ width: CANVAS_W }}
-        scrollEnabled={Platform.OS === 'web' ? !draggingId : false}
+        contentContainerStyle={{ width: canvasSize.width }}
+        scrollEnabled={!draggingId && !nativeTouchActive}
         scrollEventThrottle={16}
         showsHorizontalScrollIndicator={false}
         showsVerticalScrollIndicator={false}
@@ -837,8 +913,9 @@ export default function Workspace() {
           }}
       >
         <ScrollView
-          contentContainerStyle={{ height: CANVAS_H }}
-          scrollEnabled={Platform.OS === 'web' ? !draggingId : false}
+          ref={verticalScrollRef}
+          contentContainerStyle={{ height: canvasSize.height }}
+          scrollEnabled={!draggingId && !nativeTouchActive}
           scrollEventThrottle={16}
           showsHorizontalScrollIndicator={false}
           bounces={false}
@@ -848,7 +925,7 @@ export default function Workspace() {
             (window as any).__workspaceScroll = { ...scrollOffset.current };
           }}
         >
-          <View ref={canvasRef} nativeID="workspace-canvas" style={styles.canvas}
+          <View ref={canvasRef} nativeID="workspace-canvas" style={[styles.canvas, { width: canvasSize.width, height: canvasSize.height }]}
             onLayout={() => {
               if (Platform.OS !== 'web') {
                 canvasRef.current?.measure((_x: number, _y: number, _w: number, _h: number, pageX: number, pageY: number) => {
@@ -878,7 +955,12 @@ export default function Workspace() {
               const stackContent = (
                 <Animated.View
                   key={stack.id}
-                  onLayout={e => { stackHeightsRef.current[stack.id] = e.nativeEvent.layout.height; }}
+                  nativeID={`workspace-stack-${stack.id}`}
+                  onLayout={e => {
+                    stackHeightsRef.current[stack.id] = e.nativeEvent.layout.height;
+                    stackWidthsRef.current[stack.id] = e.nativeEvent.layout.width;
+                    updateCanvasBounds(localStacksRef.current);
+                  }}
                   style={Platform.OS !== 'web' ? undefined : [
                     styles.stackPos,
                     isDragging
@@ -931,6 +1013,7 @@ export default function Workspace() {
                     stack={stack}
                     onSplitStart={nativeSplitStart}
                     onSplitCancel={nativeSplitCancel}
+                    onNativeTouchChange={setNativeTouchActive}
                     splitOverlayX={nativeSplitOverlayX}
                     splitOverlayY={nativeSplitOverlayY}
                     onDragMove={(canvasX, canvasY, screenY) => {
@@ -1058,6 +1141,7 @@ export default function Workspace() {
           </View>
         </ScrollView>
       </ScrollView>
+      </View>
 
       {/* Library drag ghost — Modal so it floats above the drawer in screen coords */}
       {Platform.OS !== 'web' && (

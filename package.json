@@ -32,11 +32,28 @@
     "typescript": "~6.0.3"
   },
   "scripts": {
-    "start": "expo start",
-    "android": "expo run:android",
-    "ios": "expo run:ios",
-    "web": "expo start --web",
-    "build": "expo export --platform web"
+	  "start": "expo start --dev-client",
+	  "start:go": "expo start --go",
+	  "start:android": "expo start --dev-client --android",
+	  "start:android:go": "expo start --go --android",
+	  "start:ios": "expo start --dev-client --ios",
+	  "start:ios:go": "expo start --go --ios",
+	  "start:web": "expo start --web",
+
+	  "run:android": "expo run:android",
+	  "run:ios": "expo run:ios",
+
+	  "build:dev": "eas build --platform all --profile development",
+	  "build:prod": "eas build --platform all --profile production",
+	  "build:android:dev": "eas build --platform android --profile development",
+	  "build:android:prod": "eas build --platform android --profile production",
+	  "build:ios:dev": "eas build --platform ios --profile development",
+	  "build:ios:prod": "eas build --platform ios --profile production",
+
+	  "export": "expo export",
+	  "export:android": "expo export --platform android",
+	  "export:ios": "expo export --platform ios",
+	  "export:web": "expo export --platform web"
   },
   "private": true
 }

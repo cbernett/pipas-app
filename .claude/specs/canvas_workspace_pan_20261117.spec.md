@@ -1,10 +1,10 @@
 # Spec: navegação da área de trabalho extensa
 
 - **Spec:** Bug / usabilidade
-- **Status:** proposta para análise; não implementada.
+- **Status:** implementada; Validado manualmente.
 - **Risco:** HIGH — a interação de navegação concorre com arraste, encaixe e edição de blocos em componente de alta complexidade.
 - **Origem:** `pipas-app-bugs-logs.md`, seção “Área de Trabalho Limitada”.
-- **Diagnóstico no código:** `Workspace.tsx` define canvas fixo de 1200×1000 e `ScrollView`s em dois eixos. `scrollEnabled` habilita somente web e enquanto não há stack arrastada; no Android os gestos de rolagem estão desativados. As posições de blocos são coordenadas do canvas e já podem exceder a área visível.
+- **Diagnóstico original:** `Workspace.tsx` tinha canvas fixo de 1200×1000 e `scrollEnabled` habilitado apenas na web, deixando os gestos de rolagem desativados no Android. As posições de blocos podiam ultrapassar a área visível.
 
 ## Contexto e problema
 
@@ -45,3 +45,13 @@ Permitir navegar pelo canvas em todos os alvos suportados com mouse ou toque, se
 - A proposta original menciona que o canvas provavelmente já se expande. O código observado usa dimensões fixas; não assumir expansão automática.
 - Escolher uma única fonte de verdade para offset (scroll nativo ou transformação controlada) e aplicar a mesma transformação ao render e ao hit testing. Evitar somar offsets parcialmente em caminhos web/nativo.
 - Revisar a coordenação de gestos no `Workspace.tsx` antes de adicionar mais responders: o componente já mantém implementações específicas por plataforma para arraste, divisão de stacks e arraste desde a biblioteca.
+
+## Verificação desta implementação
+
+- [x] Pan em espaço vazio por arraste de mouse na web, pan por toque/scroll nativo em Android e iOS, mantendo os offsets existentes do `ScrollView`.
+- [x] Arrastar blocos continua no fluxo próprio; eventos em área vazia fora do canvas não iniciam pan.
+- [x] Coordenadas web usam o retângulo DOM já deslocado pelo scroll; coordenadas nativas usam `scrollOffset` medido. A área rolável aumenta com as dimensões/posições medidas das stacks, mantendo limites finitos.
+- [x] Exportação Expo para web e Android concluída com sucesso.
+- [ ] Validar interação real em Android e web com blocos nas quatro bordas, encaixe, separação, edição de parâmetros e biblioteca aberta/fechada.
+
+O repositório não declara runner nem script de testes automatizados. `npx tsc --noEmit` continua falhando em cinco erros preexistentes fora do workspace: três tipos de eventos em `modules/pipas-usb-serial/index.ts`, um parâmetro sem tipo em `src/components/SoundRecorder.tsx`, a duração string em `src/screens/SonsScreen.tsx` e `documentDirectory` em `src/soundStorage.ts`.
